@@ -133,6 +133,80 @@ struct ProviderSettingsTests {
         #expect(request["reasoningEffort"]?.stringValue == "high")
     }
 
+    @Test("OpenCode Go counts installed models and keeps route overrides unset")
+    func openCodeGoProvider() async throws {
+        let piNamespace = namespace("llm-pi-ai", value: [
+            "providers": .object([
+                "opencode-go": .object([
+                    "displayName": .string("OpenCode Go"),
+                    "apiKeyEnv": .string("OPENCODE_GO_API_KEY"),
+                    "models": .array([])
+                ])
+            ])
+        ])
+        let entry = ConfigurableProvider(
+            provider: "opencode-go",
+            displayName: "opencode-go",
+            settingsNs: "llm-pi-ai",
+            settingsPath: ["providers", "opencode-go"],
+            declared: false,
+            defaultBaseURL: nil,
+            baseURLEnv: nil,
+            nativeAuth: .init(env: ["OPENCODE_API_KEY"], oauth: false),
+            error: nil
+        )
+        let bridge = MockBridgeService { method, params in
+            if method == "host.call", params["method"]?.stringValue == "mutate" {
+                return Self.mutateResponse(for: piNamespace)
+            }
+            return .object([:])
+        }
+        let model = AppModel(bridge: bridge)
+        model.connectionState = AppModel.ConnectionState.ready
+        model.settingsNamespaces = ["llm-pi-ai": piNamespace]
+        model.providerDirectory = [entry]
+        model.installedProviderModels["opencode-go"] = (0..<30).map {
+            DiscoveredModel(id: "model-\($0)", name: nil, contextWindow: nil, maxTokens: nil, inputModalities: ["text"])
+        }
+        let row = try #require(model.providerRows.first)
+        #expect(row.id == "opencode-go")
+        #expect(row.modelCount == 30)
+        var draft = model.providerDraft(for: row)
+        #expect(draft.effectiveModelCount == 30)
+        draft.baseURL = "https://legacy.example/v1"
+        draft.api = .openAICompletions
+
+        try await model.saveProvider(draft, apiKey: "")
+
+        let requests = await bridge.recordedRequests()
+        let mutation = try #require(requests.first(where: { request in
+            request.params["method"]?.stringValue == "mutate"
+        })?.params["args"])
+        let operations = try #require(mutation["ops"]?.arrayValue)
+        let unsetPaths = operations.compactMap { item -> [String]? in
+            guard item["op"]?.stringValue == "unset" else { return nil }
+            return item["path"]?.arrayValue?.compactMap { $0.stringValue }
+        }
+        #expect(unsetPaths.contains(["providers", "opencode-go", "baseURL"]))
+        #expect(unsetPaths.contains(["providers", "opencode-go", "api"]))
+        #expect(!operations.contains { $0["op"]?.stringValue == "set" && $0["path"]?.arrayValue?.compactMap { $0.stringValue } == ["providers", "opencode-go", "api"] })
+    }
+
+    @Test("OpenCode Go live metadata decodes mixed protocols")
+    func openCodeGoMetadata() throws {
+        let json = """
+        {"source":"https://opencode.ai/inference/go/v1/models","fetchedAt":"2026-11-03T10:00:00.000Z","models":[
+          {"id":"claude","name":"Claude","protocols":["anthropic-messages"],"baseURLs":["https://opencode.ai/inference/go/anthropic/v1"],"contextWindow":1000000,"maxTokens":128000,"inputModalities":["text","image"],"reasoningEfforts":["low","high"]},
+          {"id":"grok","name":"Grok","protocols":["openai-responses"],"baseURLs":["https://opencode.ai/inference/go/openai/v1"],"contextWindow":200000,"maxTokens":64000,"inputModalities":["text"],"reasoningEfforts":[]}
+        ],"skipped":[]}
+        """
+        let catalog = try JSONDecoder().decode(OpenCodeGoCatalog.self, from: Data(json.utf8))
+        #expect(catalog.models.count == 2)
+        #expect(catalog.models[0].protocolLabels == ["Anthropic Messages"])
+        #expect(catalog.models[1].protocolLabels == ["OpenAI Responses"])
+        #expect(catalog.models[0].inputModalities == ["text", "image"])
+    }
+
     @Test("Model edits preserve unrelated catalog fields")
     func preservesModelFields() {
         let original = JSONValue.object([

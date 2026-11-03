@@ -69,6 +69,7 @@ final class AppModel {
     var settingsNamespaces: [String: SettingsNamespaceView] = [:]
     var providerCredentials: [String: CredentialStatus] = [:]
     var providerSettingsWritable = true
+    var installedProviderModels: [String: [DiscoveredModel]] = [:]
     var isLoadingProviders = false
     var providerError: String?
     var isSavingProvider = false
@@ -134,7 +135,7 @@ final class AppModel {
                 defaultBaseURL: "https://api.deepseek.com/anthropic",
                 baseURLEnv: ["DEEPSEEK_BASE_URL"],
                 effectiveModels: models,
-                modelCount: models.count,
+                modelCount: max(models.count, installedProviderModels["deepseek-official"]?.count ?? 0),
                 error: nil,
                 userProfile: namespace.user,
                 effectiveProfile: namespace.value
@@ -167,7 +168,7 @@ final class AppModel {
                     defaultBaseURL: entry?.defaultBaseURL,
                     baseURLEnv: entry?.baseURLEnv ?? [],
                     effectiveModels: models,
-                    modelCount: models.count,
+                    modelCount: max(models.count, installedProviderModels[provider]?.count ?? 0),
                     error: entry?.error,
                     userProfile: userProfile,
                     effectiveProfile: profileValue
@@ -212,7 +213,7 @@ final class AppModel {
             isCustom: row.isCustom,
             modelsEdited: user["models"] != nil,
             models: modelValues.map { ModelDraft(json: $0, layout: row.layout) },
-            effectiveModelCount: modelValues.count,
+            effectiveModelCount: row.modelCount,
             defaultBaseURL: row.defaultBaseURL,
             baseURLEnv: row.baseURLEnv,
             nativeAuthEnv: row.nativeAuthEnv
@@ -711,6 +712,24 @@ final class AppModel {
                 )
                 providerCredentials = try credentialsValue.decode([String: CredentialStatus].self)
             }
+
+            // Installed catalog routes answer this from their static catalog,
+            // without a credential or network request. Custom routes are
+            // intentionally excluded because they would perform live I/O.
+            var installed: [String: [DiscoveredModel]] = [:]
+            for row in providerRows where row.layout == .piAI && !row.isCustom {
+                if let value = try? await callHost(
+                    "llm",
+                    "discoverModels",
+                    .object([
+                        "settingsNs": .string("llm-pi-ai"),
+                        "request": .object(["provider": .string(row.id)])
+                    ])
+                ), let models = try? value.decode([DiscoveredModel].self) {
+                    installed[row.id] = models
+                }
+            }
+            installedProviderModels = installed
             providerError = nil
         } catch {
             providerError = safeProviderError(error)
@@ -783,6 +802,42 @@ final class AppModel {
             throw error
         } catch {
             let message = safeProviderError(error, secret: secret)
+            providerError = message
+            throw ProviderSettingsError(message: message)
+        }
+    }
+
+    func discoverOpenCodeModels() async throws -> OpenCodeGoCatalog {
+        do {
+            let value = try await bridge.request("opencode.discoverModels", timeout: .seconds(30))
+            return try value.decode(OpenCodeGoCatalog.self)
+        } catch {
+            throw ProviderSettingsError(message: safeProviderError(error))
+        }
+    }
+
+    func restoreOpenCodeGoCatalog() async throws {
+        guard providerSettingsWritable else {
+            throw ProviderSettingsError(message: "This DSH profile is read-only.")
+        }
+        do {
+            let revision = settingsNamespaces["llm-pi-ai"]?.revision
+            var args: [String: JSONValue] = [
+                "ns": .string("llm-pi-ai"),
+                "ops": .array([
+                    try JSONValue.encode(SettingsOperation.unset(["providers", "opencode-go", "baseURL"])),
+                    try JSONValue.encode(SettingsOperation.unset(["providers", "opencode-go", "api"])),
+                    try JSONValue.encode(SettingsOperation.unset(["providers", "opencode-go", "models"])),
+                    try JSONValue.encode(SettingsOperation.unset(["providers", "opencode-go", "modelOverrides"]))
+                ])
+            ]
+            if let revision { args["expectedRevision"] = .number(revision) }
+            _ = try await callHost("settings", "mutate", .object(args))
+            await refreshProviderSettings()
+            await refreshModels()
+            providerError = nil
+        } catch {
+            let message = safeProviderError(error)
             providerError = message
             throw ProviderSettingsError(message: message)
         }
@@ -917,11 +972,22 @@ final class AppModel {
         var operations: [SettingsOperation] = []
         operations.append(name.isEmpty ? .unset(["providers", draft.providerID, "displayName"])
                            : .set(["providers", draft.providerID, "displayName"], .string(name)))
-        operations.append(baseURL.isEmpty ? .unset(["providers", draft.providerID, "baseURL"])
-                           : .set(["providers", draft.providerID, "baseURL"], .string(baseURL)))
-        if draft.isCustom, let api = draft.api {
-            operations.append(.set(["providers", draft.providerID, "api"], .string(api.rawValue)))
+
+        if draft.providerID == "opencode-go" && !draft.isCustom {
+            // OpenCode Go assigns a protocol and endpoint per model. A
+            // route-level base URL or api would override that mapping, so the
+            // editor keeps both unset. Existing stale overrides are removed on
+            // save; restoring models/modelOverrides is an explicit action.
+            operations.append(.unset(["providers", draft.providerID, "baseURL"]))
+            operations.append(.unset(["providers", draft.providerID, "api"]))
+        } else {
+            operations.append(baseURL.isEmpty ? .unset(["providers", draft.providerID, "baseURL"])
+                               : .set(["providers", draft.providerID, "baseURL"], .string(baseURL)))
+            if draft.isCustom, let api = draft.api {
+                operations.append(.set(["providers", draft.providerID, "api"], .string(api.rawValue)))
+            }
         }
+
         if draft.modelsEdited {
             operations.append(.set(["providers", draft.providerID, "models"], .array(draft.modelJSON())))
         }

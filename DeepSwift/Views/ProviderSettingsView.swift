@@ -227,6 +227,8 @@ private struct ProviderEditorSheet: View {
     @State private var isSaving = false
     @State private var errorText: String?
     @State private var showDiscovery = false
+    @State private var showOpenCodeCatalog = false
+    @State private var showRestoreOpenCode = false
     @State private var pendingCredentialRemoval: String?
 
     init(seed: ProviderEditorSeed) {
@@ -276,6 +278,28 @@ private struct ProviderEditorSheet: View {
         }
         .frame(width: 740, height: 700)
         .interactiveDismissDisabled(isSaving)
+        .sheet(isPresented: $showOpenCodeCatalog) {
+            OpenCodeGoCatalogSheet()
+                .environment(model)
+        }
+        .confirmationDialog(
+            "Restore the installed OpenCode Go catalog?",
+            isPresented: $showRestoreOpenCode
+        ) {
+            Button("Restore Installed Catalog", role: .destructive) {
+                Task {
+                    do {
+                        try await model.restoreOpenCodeGoCatalog()
+                        dismiss()
+                    } catch {
+                        errorText = error.localizedDescription
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes route-level API, base URL, model, and model-override entries for OpenCode Go so its per-model protocols and sessions come from the pinned DSH catalog again. The API key reference is preserved.")
+        }
         .sheet(isPresented: $showDiscovery) {
             ModelDiscoverySheet(
                 settingsNamespace: draft.layout == .deepSeek ? "llm-deepseek" : "llm-pi-ai",
@@ -312,6 +336,16 @@ private struct ProviderEditorSheet: View {
         } message: {
             Text("The provider reference remains in place, so environment or native authentication can apply again.")
         }
+    }
+
+    private var isOpenCodeGo: Bool {
+        draft.providerID == "opencode-go" && !draft.isCustom
+    }
+
+    private var hasOpenCodeRouteOverrides: Bool {
+        !draft.baseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || draft.api != nil
+            || draft.modelsEdited
     }
 
     private var title: String {
@@ -367,27 +401,32 @@ private struct ProviderEditorSheet: View {
             TextField("Display Name", text: $draft.displayName, prompt: Text(draft.providerID.isEmpty ? "Provider name" : draft.providerID))
                 .accessibilityIdentifier("providerDisplayNameField")
 
-            if draft.isCustom {
-                Picker("API Protocol", selection: Binding(
-                    get: { draft.api ?? .openAICompletions },
-                    set: { draft.api = $0 }
-                )) {
-                    ForEach(ProviderProtocol.allCases) { api in
-                        Text(api.displayName).tag(api)
-                    }
-                }
-            } else if let api = draft.api {
-                LabeledContent("API Protocol", value: api.displayName)
+            if isOpenCodeGo {
+                LabeledContent("API Protocol", value: "Per model · installed catalog")
+                LabeledContent("Base URL", value: "Per model · installed catalog")
             } else {
-                LabeledContent("API Protocol", value: "Installed catalog")
-            }
+                if draft.isCustom {
+                    Picker("API Protocol", selection: Binding(
+                        get: { draft.api ?? .openAICompletions },
+                        set: { draft.api = $0 }
+                    )) {
+                        ForEach(ProviderProtocol.allCases) { api in
+                            Text(api.displayName).tag(api)
+                        }
+                    }
+                } else if let api = draft.api {
+                    LabeledContent("API Protocol", value: api.displayName)
+                } else {
+                    LabeledContent("API Protocol", value: "Installed catalog")
+                }
 
-            TextField(
-                "Base URL",
-                text: $draft.baseURL,
-                prompt: Text(draft.defaultBaseURL ?? draft.api?.endpointPlaceholder ?? "Provider default")
-            )
-            .accessibilityIdentifier("providerBaseURLField")
+                TextField(
+                    "Base URL",
+                    text: $draft.baseURL,
+                    prompt: Text(draft.defaultBaseURL ?? draft.api?.endpointPlaceholder ?? "Provider default")
+                )
+                .accessibilityIdentifier("providerBaseURLField")
+            }
             if !draft.baseURLEnv.isEmpty {
                 Text("Environment endpoint variables: \(draft.baseURLEnv.joined(separator: ", "))")
                     .font(.caption)
@@ -476,7 +515,39 @@ private struct ProviderEditorSheet: View {
     @ViewBuilder
     private var modelsSection: some View {
         Section("Models") {
-            if !draft.isCustom && !draft.modelsEdited {
+            if isOpenCodeGo {
+                LabeledContent(
+                    "Installed Catalog",
+                    value: draft.effectiveModelCount == 1 ? "1 routed model" : "\(draft.effectiveModelCount) routed models"
+                )
+                Text("OpenCode Go routes different models through different protocols. The pinned DSH catalog supplies each model’s API, base URL, and per-conversation session header, so DeepSwift leaves route-level overrides unset.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if hasOpenCodeRouteOverrides {
+                    Label("This provider has route-level overrides or a model list. Those can collapse per-model routing.", systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                HStack(spacing: 12) {
+                    Button {
+                        showOpenCodeCatalog = true
+                    } label: {
+                        Label("Inspect Live OpenCode Catalog…", systemImage: "cloud")
+                    }
+                    .buttonStyle(.borderless)
+
+                    if hasOpenCodeRouteOverrides {
+                        Button {
+                            showRestoreOpenCode = true
+                        } label: {
+                            Label("Restore Installed Catalog…", systemImage: "arrow.counterclockwise")
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+            } else if !draft.isCustom && !draft.modelsEdited {
                 LabeledContent("Catalog", value: draft.effectiveModelCount == 1 ? "1 installed model" : "\(draft.effectiveModelCount) installed models")
                 Text("Models are inherited from the installed provider catalog. Customize them only when this provider needs an override.")
                     .font(.caption)
@@ -888,6 +959,171 @@ private struct ModelDiscoverySheet: View {
             errorText = error.localizedDescription
         }
     }
+}
+
+
+// MARK: - OpenCode Go live catalog
+
+private struct OpenCodeGoCatalogSheet: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var catalog: OpenCodeGoCatalog?
+    @State private var isLoading = true
+    @State private var errorText: String?
+    @State private var query = ""
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("OpenCode Go — Live Model Catalog")
+                        .font(.title3.weight(.semibold))
+                    Text("Read-only metadata from \(OpenCodeGoCatalogSource.displayURL)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Refresh") {
+                    Task { await load() }
+                }
+                .disabled(isLoading)
+                Button("Close") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding(18)
+            Divider()
+
+            if isLoading {
+                Spacer()
+                ProgressView("Fetching OpenCode Go model metadata…")
+                Spacer()
+            } else if let errorText {
+                Spacer()
+                ContentUnavailableView {
+                    Label("OpenCode Go Catalog Unavailable", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(errorText)
+                } actions: {
+                    Button("Try Again") {
+                        Task { await load() }
+                    }
+                }
+                Spacer()
+            } else if let catalog, catalog.models.isEmpty {
+                Spacer()
+                ContentUnavailableView {
+                    Label("No Chat Models Returned", systemImage: "tray")
+                } description: {
+                    Text("The endpoint answered successfully but returned no chat model metadata.")
+                }
+                Spacer()
+            } else if let catalog {
+                VStack(spacing: 10) {
+                    HStack {
+                        TextField("Search models or protocols", text: $query)
+                            .textFieldStyle(.roundedBorder)
+                        Text("\(catalog.models.count) live · \(installedCount) in pinned catalog")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.top, 12)
+
+                    List(filtered(catalog.models)) { entry in
+                        HStack(alignment: .top, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(entry.name)
+                                    .font(.headline)
+                                Text(entry.id)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                                Text(entry.protocolLabels.isEmpty ? "Unrecognized API" : entry.protocolLabels.joined(separator: " · "))
+                                    .font(.caption)
+                                    .foregroundStyle(entry.protocolLabels.isEmpty ? .orange : .secondary)
+                                HStack(spacing: 12) {
+                                    if let context = entry.contextWindow {
+                                        Text("Context \(context.formatted())")
+                                    }
+                                    if let maximum = entry.maxTokens {
+                                        Text("Max \(maximum.formatted())")
+                                    }
+                                    if !entry.inputModalities.isEmpty {
+                                        Text(entry.inputModalities.joined(separator: " + "))
+                                    }
+                                }
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                            }
+                            Spacer(minLength: 8)
+                            if !entry.reasoningEfforts.isEmpty {
+                                Text("Reasoning · \(entry.reasoningEfforts.joined(separator: ", "))")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            if !installedIDs.contains(entry.id) {
+                                Label("Not in pinned catalog", systemImage: "exclamationmark.circle")
+                                    .font(.caption2)
+                                    .foregroundStyle(.orange)
+                                    .help("This live model has no installed DSH catalog descriptor, so the pinned runtime cannot route it.")
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .listStyle(.inset)
+                }
+            }
+
+            Divider()
+            HStack {
+                Text("OpenCode Go uses per-model protocols and a per-conversation x-opencode-session header through the pinned pi-ai adapter.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                Spacer()
+            }
+            .padding(18)
+        }
+        .frame(width: 720, height: 560)
+        .task { await load() }
+    }
+
+    private var installedIDs: Set<String> {
+        let discovered = Set(model.installedProviderModels["opencode-go"]?.map(\.id) ?? [])
+        if !discovered.isEmpty { return discovered }
+        return Set(model.models?.groups.first(where: { $0.id == "opencode-go" })?.models.map(\.id) ?? [])
+    }
+
+    private var installedCount: Int {
+        installedIDs.count
+    }
+
+    private func filtered(_ models: [OpenCodeGoModel]) -> [OpenCodeGoModel] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else { return models }
+        return models.filter { entry in
+            entry.id.localizedCaseInsensitiveContains(needle)
+                || entry.name.localizedCaseInsensitiveContains(needle)
+                || entry.protocolLabels.contains { $0.localizedCaseInsensitiveContains(needle) }
+        }
+    }
+
+    private func load() async {
+        isLoading = true
+        errorText = nil
+        do {
+            let result = try await model.discoverOpenCodeModels()
+            catalog = result
+            isLoading = false
+        } catch {
+            errorText = error.localizedDescription
+            isLoading = false
+        }
+    }
+}
+
+private enum OpenCodeGoCatalogSource {
+    static let displayURL = "https://opencode.ai/inference/go/v1/models"
 }
 
 #if DEBUG

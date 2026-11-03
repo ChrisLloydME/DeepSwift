@@ -435,3 +435,48 @@ struct DiscoveredModel: Codable, Identifiable, Hashable, Sendable {
         )
     }
 }
+
+
+// MARK: - OpenCode Go compatibility discovery
+
+struct OpenCodeGoCatalog: Codable, Sendable {
+    struct SkippedModel: Codable, Hashable, Sendable {
+        let id: String
+        let reason: String
+    }
+
+    let source: String
+    let fetchedAt: String
+    let models: [OpenCodeGoModel]
+    let skipped: [SkippedModel]?
+}
+
+struct OpenCodeGoModel: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let name: String
+    let protocols: [String]
+    let baseURLs: [String]
+    let contextWindow: Int?
+    let maxTokens: Int?
+    let inputModalities: [String]
+    let reasoningEfforts: [String]
+    let skipped: [String]?
+
+    var protocolLabels: [String] {
+        protocols.map(Self.label(for:))
+    }
+
+    var hasUnmappedProtocol: Bool {
+        protocols.isEmpty || skipped?.isEmpty == false
+    }
+
+    static func label(for protocolName: String) -> String {
+        switch protocolName {
+        case "openai-completions": return "OpenAI Chat Completions"
+        case "openai-responses": return "OpenAI Responses"
+        case "anthropic-messages": return "Anthropic Messages"
+        case "google-generative-ai": return "Google Generative AI"
+        default: return protocolName
+        }
+    }
+}
