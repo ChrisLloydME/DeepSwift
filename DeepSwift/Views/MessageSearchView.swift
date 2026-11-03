@@ -17,7 +17,10 @@ struct MessageSearchView: View {
                     .foregroundStyle(.secondary)
                 TextField("Search messages", text: $query)
                     .textFieldStyle(.plain)
-                    .onSubmit { Task { await model.searchMessages() } }
+                    .onSubmit {
+                        model.searchQuery = query
+                        Task { await model.searchMessages() }
+                    }
                 if model.isSearchingMessages {
                     ProgressView().controlSize(.small)
                 }

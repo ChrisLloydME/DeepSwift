@@ -19,7 +19,20 @@ struct ChatView: View {
                 liveActivity
             }
             Divider()
-            ComposerView()
+            if model.selectedSession?.isSubagent == true {
+                HStack(spacing: 8) {
+                    Image(systemName: "eye")
+                    Text("Subagent conversation · read-only")
+                        .font(.callout)
+                    Spacer()
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
+                .background(.bar)
+            } else {
+                ComposerView()
+            }
         }
         .background(Color(nsColor: .textBackgroundColor))
     }
@@ -28,7 +41,7 @@ struct ChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 18) {
-                    if model.conversation.hasMore {
+                    if model.conversation.hasMore && model.conversation.firstSeq != nil {
                         HStack {
                             Spacer()
                             Button {
@@ -257,7 +270,12 @@ private struct LiveAssistantView: View {
                 }
             }
             if !live.text.isEmpty {
-                MarkdownTextView(text: live.text)
+                // Plain text keeps token-by-token streaming cheap; the
+                // committed assistant message renders through the full
+                // Markdown block renderer.
+                Text(live.text)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             if !live.toolNames.isEmpty {
                 HStack(spacing: 6) {
