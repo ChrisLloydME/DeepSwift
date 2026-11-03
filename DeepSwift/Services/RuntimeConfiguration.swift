@@ -88,8 +88,9 @@ struct RuntimeConfiguration: Sendable {
     private static func resolveBridge(environment: [String: String], root: URL, fileManager: FileManager) throws -> String {
         var candidates: [String] = []
         if let explicit = environment["DEEPSWIFT_BRIDGE_PATH"] { candidates.append(explicit) }
-        if let resource = Bundle.main.resourceURL?.appendingPathComponent("Bridge/main.mjs").path {
-            candidates.append(resource)
+        if let resources = Bundle.main.resourceURL {
+            candidates.append(resources.appendingPathComponent("Bridge/main.mjs").path)
+            candidates.append(resources.appendingPathComponent("Bridge/src/main.mjs").path)
         }
         candidates.append(root.appendingPathComponent("Bridge/src/main.mjs").path)
         for candidate in candidates where fileManager.fileExists(atPath: candidate) {
