@@ -16,6 +16,8 @@ import OSLog
 @MainActor
 @Observable
 final class AppModel {
+    static let openCodeUserAgent = "DeepSwift/1.0 (macOS)"
+
     enum ConnectionState: Equatable {
         case idle
         case starting
@@ -1074,6 +1076,12 @@ final class AppModel {
             if keyProvided || referenceIsExplicit {
                 profile["apiKeyEnv"] = .string(reference)
             }
+            if draft.providerID == "opencode-go" && !draft.isCustom {
+                profile["headers"] = .object([
+                    "User-Agent": .string(Self.openCodeUserAgent),
+                    "x-opencode-client": .string("deepswift")
+                ])
+            }
             return [.set(["providers", draft.providerID], .object(profile))]
         }
 
@@ -1088,6 +1096,8 @@ final class AppModel {
             // save; restoring models/modelOverrides is an explicit action.
             operations.append(.unset(["providers", draft.providerID, "baseURL"]))
             operations.append(.unset(["providers", draft.providerID, "api"]))
+            operations.append(.set(["providers", draft.providerID, "headers", "User-Agent"], .string(Self.openCodeUserAgent)))
+            operations.append(.set(["providers", draft.providerID, "headers", "x-opencode-client"], .string("deepswift")))
         } else {
             operations.append(baseURL.isEmpty ? .unset(["providers", draft.providerID, "baseURL"])
                                : .set(["providers", draft.providerID, "baseURL"], .string(baseURL)))
