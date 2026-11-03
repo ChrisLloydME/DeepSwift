@@ -104,7 +104,7 @@ private struct RuntimeSettingsView: View {
 
             Section("Credentials") {
                 Toggle("Pass provider API key environment variables", isOn: $allowProviderEnv)
-                Text("When enabled, DEEPSEEK_, OPENAI_, and ANTHROPIC_ environment variables are passed to the isolated Host. Saved API-key credentials are written through the isolated DSH credential store and are never read back into the app.")
+                Text("When enabled, DEEPSEEK_, OPENAI_, ANTHROPIC_, and OPENCODE_ environment variables are passed to the isolated Host. Saved API-key credentials are written through the isolated DSH credential store and are never read back into the app.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

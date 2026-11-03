@@ -57,7 +57,7 @@ export function buildHostEnvironment({ home, baseEnv = process.env, allowProvide
   }
   if (allowProviderEnv) {
     for (const [key, value] of Object.entries(baseEnv)) {
-      if (typeof value === 'string' && /^(DEEPSEEK|OPENAI|ANTHROPIC)_[A-Z0-9_]+$/.test(key)) env[key] = value
+      if (typeof value === 'string' && /^(DEEPSEEK|OPENAI|ANTHROPIC|OPENCODE)_[A-Z0-9_]+$/.test(key)) env[key] = value
     }
   }
   env.DSH_HOME = home

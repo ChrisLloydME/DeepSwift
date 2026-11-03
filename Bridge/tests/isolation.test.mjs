@@ -61,11 +61,13 @@ test('provider environment is passed only with explicit opt-in', () => {
       PATH: '/usr/bin',
       DEEPSEEK_API_KEY: 'secret',
       OPENAI_API_KEY: 'other',
+      OPENCODE_API_KEY: 'opencode-secret',
       UNRELATED_SECRET: 'nope',
     },
     allowProviderEnv: true,
   })
   assert.equal(env.DEEPSEEK_API_KEY, 'secret')
   assert.equal(env.OPENAI_API_KEY, 'other')
+  assert.equal(env.OPENCODE_API_KEY, 'opencode-secret')
   assert.equal(env.UNRELATED_SECRET, undefined)
 })
