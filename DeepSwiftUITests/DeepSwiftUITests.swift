@@ -2,42 +2,31 @@
 //  DeepSwiftUITests.swift
 //  DeepSwiftUITests
 //
-//  Created by Christopher Lloyd on 2026.11.03.
-//
 
 import XCTest
 
 final class DeepSwiftUITests: XCTestCase {
-
     override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-
-        // In UI tests it is usually best to stop immediately when a failure occurs.
         continueAfterFailure = false
-
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
-    }
-
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
     }
 
     @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
+    func testLaunchesIntoNativeWindow() throws {
         let app = XCUIApplication()
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        app.launchEnvironment["DEEPSWIFT_DSH_HOME"] = repositoryRoot
+            .appendingPathComponent(".local/profiles/ui-test", isDirectory: true)
+            .path
         app.launch()
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-        // XCUIAutomation Documentation
-        // https://developer.apple.com/documentation/xcuiautomation
-    }
-
-    @MainActor
-    func testLaunchPerformance() throws {
-        // This measures how long it takes to launch your application.
-        measure(metrics: [XCTApplicationLaunchMetric()]) {
-            XCUIApplication().launch()
-        }
+        XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 15), "The application window did not appear")
+        XCTAssertTrue(
+            app.staticTexts["DeepSwift"].firstMatch.waitForExistence(timeout: 10),
+            "The native welcome surface did not appear"
+        )
+        XCTAssertTrue(app.buttons["New Workspace"].exists || app.buttons["Choose Workspace…"].exists)
+        app.terminate()
     }
 }

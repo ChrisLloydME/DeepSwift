@@ -19,6 +19,7 @@ struct InspectorView: View {
                     modelSection
                     jobsSection
                     activitySection
+                    terminalSection
                     runtimeSection
                 }
                 .listStyle(.inset)
@@ -55,6 +56,9 @@ struct InspectorView: View {
             }
             LabeledContent("Preset") {
                 Text(model.conversation.header?.agentPreset ?? "Default")
+            }
+            LabeledContent("Permission") {
+                Text(model.conversation.permissionPreset ?? "Default")
             }
             LabeledContent("Identifier") {
                 Text(session.sessionId)
@@ -240,6 +244,16 @@ struct InspectorView: View {
             if model.conversation.hasMore {
                 LabeledContent("History", value: "More available")
             }
+        }
+    }
+
+    private var terminalSection: some View {
+        Section("Terminal") {
+            Label("Terminal integration is not available in this build.", systemImage: "terminal")
+                .foregroundStyle(.secondary)
+            Text("DeepSwift does not start a separate shell outside the DSH runtime. The official terminal controller can be wired in a later phase.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

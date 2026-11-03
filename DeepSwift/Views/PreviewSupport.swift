@@ -173,9 +173,41 @@ enum PreviewData {
     }
 }
 
+@MainActor
+extension PreviewData {
+    static func fileModel() -> AppModel {
+        let model = model()
+        model.fileListing = WorkspaceDirectoryListing(
+            path: "",
+            entries: [
+                WorkspaceFileEntry(name: "Sources", type: "directory", size: nil),
+                WorkspaceFileEntry(name: "README.md", type: "file", size: 2_048),
+                WorkspaceFileEntry(name: "Package.swift", type: "file", size: 1_200)
+            ],
+            truncated: false
+        )
+        model.filePreview = WorkspaceFileText(
+            absolutePath: "/Users/example/Projects/NativeApp/README.md",
+            version: "v1",
+            bytes: 2_048,
+            offset: 1,
+            text: "# NativeApp\n\nA native macOS client.\n\n## Building\n\n```sh\nswift build\n```",
+            lines: 9,
+            eof: true
+        )
+        return model
+    }
+}
+
 #Preview("Conversation") {
     ContentView()
         .environment(PreviewData.model())
         .frame(width: 1_200, height: 800)
+}
+
+#Preview("Workspace Browser") {
+    WorkspaceBrowserView()
+        .environment(PreviewData.fileModel())
+        .frame(width: 1_100, height: 700)
 }
 #endif

@@ -16,6 +16,9 @@ struct ComposerView: View {
     var body: some View {
         @Bindable var model = model
         VStack(alignment: .leading, spacing: 0) {
+            if !model.commandSuggestions.isEmpty {
+                commandSuggestions
+            }
             if !model.attachments.isEmpty {
                 attachmentStrip
             }
@@ -110,6 +113,33 @@ struct ComposerView: View {
         } isTargeted: { targeted in
             isDropTargeted = targeted
         }
+    }
+
+    private var commandSuggestions: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(model.commandSuggestions) { command in
+                Button {
+                    model.applyCommandSuggestion(command)
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(command.slashName)
+                            .font(.system(.callout, design: .monospaced))
+                            .foregroundStyle(.primary)
+                        Text(command.description)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 5)
+                }
+                .buttonStyle(.plain)
+                Divider()
+            }
+        }
+        .background(.quaternary.opacity(0.12))
     }
 
     private var attachmentStrip: some View {
@@ -242,6 +272,7 @@ struct ComposerTextView: NSViewRepresentable {
         textView.setSelectedRange(NSRange(location: min(previous.location, length), length: 0))
     }
 
+    @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: ComposerTextView
         weak var textView: NSTextView?
@@ -280,9 +311,7 @@ struct ComposerTextView: NSViewRepresentable {
             let used = layoutManager.usedRect(for: container)
             let inset = textView.textContainerInset.height * 2
             let height = min(max(used.height + inset + 4, 70), 220)
-            Task { @MainActor in
-                self.parent.onHeightChange(height)
-            }
+            self.parent.onHeightChange(height)
         }
     }
 }

@@ -13,8 +13,8 @@ private enum SidebarSelection: Hashable {
 
 struct SidebarView: View {
     @Environment(AppModel.self) private var model
-    @State private var renamingSession: SessionSummary?
-    @State private var renameText = ""
+    @State private var renameTarget: RenameTarget?
+    @State private var workspaceToDelete: WorkspaceItem?
     @State private var showArchived = false
 
     var body: some View {
@@ -29,11 +29,19 @@ struct SidebarView: View {
                                 model.selectWorkspace(workspace.workspaceId)
                                 Task { await model.createSession() }
                             }
+                            Button("Rename…") {
+                                renameTarget = .workspace(workspace)
+                            }
+                            Divider()
                             Button("Reveal in Finder") {
                                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: workspace.path)])
                             }
                             Button("Copy Path") {
                                 copy(workspace.path)
+                            }
+                            Divider()
+                            Button("Remove Workspace…", role: .destructive) {
+                                workspaceToDelete = workspace
                             }
                         }
                 }
@@ -78,18 +86,25 @@ struct SidebarView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             RuntimeStatusBar()
         }
-        .alert("Rename Session", isPresented: Binding(
-            get: { renamingSession != nil },
-            set: { if !$0 { renamingSession = nil } }
-        )) {
-            TextField("Title", text: $renameText)
-            Button("Rename") {
-                if let session = renamingSession {
-                    Task { await model.renameSession(session, to: renameText) }
-                }
-                renamingSession = nil
+        .sheet(item: $renameTarget) { target in
+            RenameSheet(target: target)
+                .environment(model)
+        }
+        .confirmationDialog(
+            "Remove this workspace from DeepSwift?",
+            isPresented: Binding(
+                get: { workspaceToDelete != nil },
+                set: { if !$0 { workspaceToDelete = nil } }
+            ),
+            presenting: workspaceToDelete
+        ) { workspace in
+            Button("Remove Workspace", role: .destructive) {
+                Task { await model.deleteWorkspace(workspace) }
+                workspaceToDelete = nil
             }
-            Button("Cancel", role: .cancel) { renamingSession = nil }
+            Button("Cancel", role: .cancel) { workspaceToDelete = nil }
+        } message: { workspace in
+            Text("This removes the registration only. Files and sessions are retained by DSH.")
         }
     }
 
@@ -100,8 +115,7 @@ struct SidebarView: View {
                 .tag(SidebarSelection.session(session.sessionId))
                 .contextMenu {
                     Button("Rename…") {
-                        renameText = session.title ?? ""
-                        renamingSession = session
+                        renameTarget = .session(session)
                     }
                     Button("Archive") {
                         Task { await model.archiveSession(session) }
