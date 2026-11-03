@@ -123,6 +123,7 @@ struct TerminalWorkspaceView: View {
                     onResize: { cols, rows in model.resizeTerminal(cols: cols, rows: rows) }
                 )
                 .id(model.selectedTerminalID)
+                .accessibilityLabel("Terminal session")
             }
         } else if model.terminalLoading {
             ProgressView("Attaching terminal…")

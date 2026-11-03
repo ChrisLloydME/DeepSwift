@@ -213,8 +213,10 @@ struct WorkspaceBrowserView: View {
                     Divider()
                     if kind == .image {
                         ZoomableImagePreview(data: data)
+                            .accessibilityLabel("Image preview")
                     } else {
                         PDFPreview(data: data)
+                            .accessibilityLabel("PDF preview")
                     }
                 }
             } else if let error = model.filePreviewError {
