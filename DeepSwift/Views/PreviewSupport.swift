@@ -205,6 +205,33 @@ extension PreviewData {
         .frame(width: 1_200, height: 800)
 }
 
+#Preview("Inspector Visible") {
+    let model = PreviewData.model()
+    model.showInspector = true
+    return ContentView()
+        .environment(model)
+        .frame(width: 1_240, height: 820)
+}
+
+#Preview("Inspector Empty") {
+    let model = PreviewData.model()
+    model.selectedSessionID = nil
+    model.selectedWorkspaceID = "ws-1"
+    model.conversation.reset()
+    model.showInspector = true
+    return ContentView()
+        .environment(model)
+        .frame(width: 1_000, height: 700)
+}
+
+#Preview("Inspector Narrow") {
+    let model = PreviewData.model()
+    model.showInspector = true
+    return ContentView()
+        .environment(model)
+        .frame(width: 900, height: 620)
+}
+
 #Preview("Workspace Browser") {
     WorkspaceBrowserView()
         .environment(PreviewData.fileModel())
