@@ -156,7 +156,9 @@ final class AppModel {
                 let models = profile["models"]?.arrayValue ?? []
                 rows.append(ProviderRow(
                     id: provider,
-                    displayName: profile["displayName"]?.stringValue ?? entry?.displayName ?? provider,
+                    displayName: provider == "opencode-go"
+                        ? "OpenCode Go"
+                        : (profile["displayName"]?.stringValue ?? entry?.displayName ?? provider),
                     layout: .piAI,
                     isCustom: entry?.isCustomRoute == true || entry == nil,
                     isConfigured: true,
@@ -223,7 +225,7 @@ final class AppModel {
     func newBuiltInProviderDraft(for entry: ConfigurableProvider) -> ProviderDraft {
         ProviderDraft(
             providerID: entry.provider,
-            displayName: entry.displayName,
+            displayName: entry.provider == "opencode-go" ? "OpenCode Go" : entry.displayName,
             baseURL: "",
             apiKeyEnv: "",
             api: nil,
