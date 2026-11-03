@@ -65,6 +65,7 @@ final class AppModel {
     var searchText = ""
     var models: ModelCatalog?
     var permissionCatalog: PermissionCatalog?
+    var agentPresetRoster: AgentPresetRoster?
     var commands: [CommandDescriptor] = []
     var account: AccountView?
     var providerDirectory: [ConfigurableProvider] = []
@@ -310,6 +311,7 @@ final class AppModel {
             await refreshSessions()
             await refreshModels()
             await refreshPermissionCatalog()
+            await refreshAgentPresets()
             await refreshAccount()
             await refreshProviderSettings()
         } catch {
@@ -716,6 +718,37 @@ final class AppModel {
         // `undefined`/null means the line is not a recognized command; the
         // caller falls back to the ordinary prompt path.
         return result.objectValue != nil
+    }
+
+    func refreshAgentPresets() async {
+        guard connectionState.isReady else { return }
+        do {
+            let result = try await bridge.request("host.call", params: .object([
+                "namespace": .string("agentPresets"),
+                "method": .string("list"),
+                "args": .object([:])
+            ]))
+            agentPresetRoster = try result.decode(AgentPresetRoster.self)
+        } catch {
+            agentPresetRoster = nil
+        }
+    }
+
+    func setAgentPreset(_ id: String) async {
+        guard let sessionID = selectedSessionID, conversation.items.isEmpty, selectedSession?.isRunning != true else { return }
+        do {
+            _ = try await bridge.request("host.call", params: .object([
+                "namespace": .string("agentPresets"),
+                "method": .string("select"),
+                "args": .object([
+                    "agentId": .string(sessionID),
+                    "agentPreset": .string(id)
+                ])
+            ]), timeout: .seconds(30))
+            conversation.applyAgentPreset(id)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     func refreshPermissionCatalog() async {
@@ -2182,6 +2215,7 @@ final class AppModel {
             await refreshSessions()
             await refreshModels()
             await refreshPermissionCatalog()
+            await refreshAgentPresets()
             await refreshAccount()
             await refreshProviderSettings()
             if let selectedSessionID { selectSession(selectedSessionID) }

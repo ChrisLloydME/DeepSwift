@@ -277,6 +277,20 @@ enum WorkspacePreviewKind: String, Sendable, Equatable {
     case unsupported
 }
 
+struct AgentPresetRow: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let isDefault: Bool
+    let name: String?
+    let description: String?
+    let broken: String?
+
+    var displayName: String { name ?? id }
+}
+
+struct AgentPresetRoster: Codable, Hashable, Sendable {
+    let presets: [AgentPresetRow]
+}
+
 struct PermissionPresetOption: Codable, Identifiable, Hashable, Sendable {
     let value: String
     let name: String

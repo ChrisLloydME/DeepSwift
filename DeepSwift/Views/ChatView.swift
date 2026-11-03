@@ -157,6 +157,7 @@ private struct ChatHeader: View {
                 .background(.quaternary.opacity(0.5), in: Capsule())
             }
 
+            AgentPresetMenu()
             PermissionPresetMenu()
 
             if let models = model.models, !models.isEmpty {

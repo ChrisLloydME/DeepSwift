@@ -296,6 +296,35 @@ struct AppModelTests {
         #expect(model.filePreview?.text == "# Readme")
     }
 
+    @Test("Agent presets switch through the official registry")
+    func agentPresetSwitch() async throws {
+        let bridge = MockBridgeService { method, params in
+            if method == "host.call", params["method"]?.stringValue == "select" {
+                return .string("standard")
+            }
+            if method == "host.call", params["method"]?.stringValue == "list" {
+                return .object(["presets": .array([
+                    .object(["id": .string("standard"), "isDefault": .bool(true)]),
+                    .object(["id": .string("minimal"), "isDefault": .bool(false)])
+                ])])
+            }
+            return .object([:])
+        }
+        let model = AppModel(bridge: bridge)
+        model.selectedSessionID = "session-1"
+        model.connectionState = .ready
+        await model.refreshAgentPresets()
+        #expect(model.agentPresetRoster?.presets.count == 2)
+
+        await model.setAgentPreset("minimal")
+
+        let requests = await bridge.recordedRequests()
+        let select = try #require(requests.first { $0.method == "host.call" && $0.params["method"]?.stringValue == "select" })
+        #expect(select.params["namespace"]?.stringValue == "agentPresets")
+        #expect(select.params["args"]?["agentId"]?.stringValue == "session-1")
+        #expect(select.params["args"]?["agentPreset"]?.stringValue == "minimal")
+    }
+
     @Test("Permission presets switch through the official command")
     func permissionPresetSwitch() async throws {
         let bridge = MockBridgeService { method, params in

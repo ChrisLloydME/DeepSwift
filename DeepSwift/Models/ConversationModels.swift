@@ -13,7 +13,7 @@ struct SessionHeader: Codable, Hashable, Sendable {
     let parentSession: String?
     let isSeeded: Bool?
     let origin: String?
-    let agentPreset: String?
+    var agentPreset: String?
 
     var createdDate: Date? {
         createdAt.map { Date(timeIntervalSince1970: $0 / 1000) }
@@ -245,6 +245,10 @@ struct ConversationProjection: Sendable {
         if let first = items.first?.seq { firstSeq = first }
     }
 
+    mutating func applyAgentPreset(_ value: String) {
+        header?.agentPreset = value
+    }
+
     mutating func apply(event: SessionWireEvent) {
         guard !seenSequences.contains(event.seq) else { return }
         seenSequences.insert(event.seq)
@@ -275,6 +279,8 @@ struct ConversationProjection: Sendable {
             applyTurnEnd(event)
         case "session/title":
             if let value = event.data["title"]?.stringValue { title = value }
+        case "agent-preset/selected":
+            if let value = event.data["agentPreset"]?.stringValue { applyAgentPreset(value) }
         case "permission/preset":
             if let value = event.data["preset"]?.stringValue { permissionPreset = value }
         case "model/selection":
