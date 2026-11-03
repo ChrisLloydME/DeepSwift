@@ -190,6 +190,16 @@ struct ProviderSettingsTests {
         #expect(unsetPaths.contains(["providers", "opencode-go", "baseURL"]))
         #expect(unsetPaths.contains(["providers", "opencode-go", "api"]))
         #expect(!operations.contains { $0["op"]?.stringValue == "set" && $0["path"]?.arrayValue?.compactMap { $0.stringValue } == ["providers", "opencode-go", "api"] })
+        #expect(operations.contains { operation in
+            operation["op"]?.stringValue == "set"
+                && operation["path"]?.arrayValue?.compactMap { $0.stringValue } == ["providers", "opencode-go", "headers", "User-Agent"]
+                && operation["value"]?.stringValue == "DeepSwift/1.0 (macOS)"
+        })
+        #expect(operations.contains { operation in
+            operation["op"]?.stringValue == "set"
+                && operation["path"]?.arrayValue?.compactMap { $0.stringValue } == ["providers", "opencode-go", "headers", "x-opencode-client"]
+                && operation["value"]?.stringValue == "deepswift"
+        })
     }
 
     @Test("Provider refresh counts an installed catalog without a credential")

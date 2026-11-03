@@ -23,7 +23,7 @@ repository contains no second Agent engine and no WebView or React surface.
 | User questions | Implemented | Native question sheet with options, multi-select, free text, plan-review detail |
 | Model selection | Implemented | Official provider-grouped catalog, reasoning efforts, session model selection, explicit unavailable-model state, and a bounded searchable picker sheet |
 | Agent and permission presets | Implemented | Official `agentPresets` roster/selection before a session's first turn; official `/permission` command for permission presets |
-| OpenCode Go | Implemented and live-verified | Installed mixed-protocol catalog preserved; live metadata inspection; stale route overrides reset; minimal real inference and tool turn verified |
+| OpenCode Go | Implemented and live-verified | Installed mixed-protocol catalog preserved; live metadata inspection; accurate client headers; stale route overrides reset; minimal real inference and tool turn verified |
 | File references | Implemented | Local Markdown links open the native workspace preview; external links use the system browser |
 | Model providers / BYOK | Implemented | Official provider directory and settings APIs; DeepSeek API key, installed pi-ai providers, custom OpenAI- and Anthropic-compatible routes; official model discovery; write-only DSH credentials |
 | Account sign-in | Partial | Official browser OAuth start/cancel/sign-out wired; completion requires a real account and was not automated |

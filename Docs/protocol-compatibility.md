@@ -142,7 +142,9 @@ DeepSwift adds one narrowly scoped bridge method for live metadata:
 
 The method sends an identifying `DeepSwift/1.0 (macOS)` User-Agent and
 `x-opencode-client: deepswift`, and sends no credential because the metadata
-endpoint is public. It returns protocol, endpoint, context/output limits,
+endpoint is public. The Models editor writes the same accurate headers into the
+OpenCode Go profile, so the Host's inference requests do not present the pi-ai
+library as another application's client identity. It returns protocol, endpoint, context/output limits,
 modalities, and reasoning metadata for inspection. It is read-only: routing
 still comes from the installed DSH catalog, so a live response never replaces
 configured models.
