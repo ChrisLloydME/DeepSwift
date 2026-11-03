@@ -273,3 +273,18 @@ struct SessionSearchHit: Codable, Identifiable, Hashable, Sendable {
 
     var id: String { "\(sessionId)-\(snippet.hashValue)" }
 }
+
+struct CommandDescriptor: Codable, Identifiable, Hashable, Sendable {
+    struct Input: Codable, Hashable, Sendable {
+        let hint: String?
+        let attachments: Bool?
+    }
+
+    let definitionId: String?
+    let name: String
+    let description: String
+    let input: Input?
+
+    var id: String { name }
+    var slashName: String { "/\(name)" }
+}

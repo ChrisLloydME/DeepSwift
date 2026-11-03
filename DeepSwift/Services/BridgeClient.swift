@@ -183,7 +183,6 @@ actor BridgeClient: DSHBridgeService {
     // MARK: - Inbound
 
     private func ingestStdout(_ data: Data) {
-        logger.debug("stdout chunk \(data.count, privacy: .public) bytes")
         stdoutBuffer.append(data)
         while let newline = stdoutBuffer.firstIndex(of: 0x0A) {
             let line = stdoutBuffer[..<newline]
@@ -220,13 +219,11 @@ actor BridgeClient: DSHBridgeService {
             return
         }
         if let event = inbound.event {
-            logger.debug("bridge event \(event, privacy: .public)")
             notificationContinuation.yield(BridgeNotification(event: event, data: inbound.data ?? .null))
             return
         }
         guard let id = inbound.id, let request = pending.removeValue(forKey: id) else { return }
         request.timeoutTask.cancel()
-        logger.debug("bridge response for \(request.method, privacy: .public)")
         if let error = inbound.error {
             request.continuation.resume(throwing: BridgeClientError.bridge(
                 code: error.code,

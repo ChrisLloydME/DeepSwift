@@ -63,6 +63,7 @@ final class AppModel {
     var attachments: [ComposerAttachment] = []
     var searchText = ""
     var models: ModelCatalog?
+    var commands: [CommandDescriptor] = []
     var account: AccountView?
     var isSigningIn = false
     var pendingApprovals: [PendingApproval] = []
@@ -456,6 +457,52 @@ final class AppModel {
         }
     }
 
+    func refreshCommands() async {
+        guard let sessionID = selectedSessionID else {
+            commands = []
+            return
+        }
+        do {
+            let result = try await bridge.request("host.call", params: .object([
+                "namespace": .string("commands"),
+                "method": .string("list"),
+                "args": .object(["agentId": .string(sessionID)])
+            ]), timeout: .seconds(20))
+            commands = (result.arrayValue ?? []).compactMap { try? $0.decode(CommandDescriptor.self) }
+        } catch {
+            commands = []
+            diagnosticLog = "Commands unavailable: \(error.localizedDescription)"
+        }
+    }
+
+    var commandSuggestions: [CommandDescriptor] {
+        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("/"), !trimmed.dropFirst().contains(" ") else { return [] }
+        return commands
+            .filter { $0.slashName.hasPrefix(trimmed) }
+            .prefix(5)
+            .map { $0 }
+    }
+
+    func applyCommandSuggestion(_ command: CommandDescriptor) {
+        draft = command.slashName + " "
+    }
+
+    private func executeCommand(_ line: String, sessionID: String) async throws -> Bool {
+        let result = try await bridge.request("host.call", params: .object([
+            "namespace": .string("commands"),
+            "method": .string("execute"),
+            "args": .object([
+                "agentId": .string(sessionID),
+                "line": .string(line),
+                "submittedAttachments": .array([])
+            ])
+        ]), timeout: .seconds(30))
+        // `undefined`/null means the line is not a recognized command; the
+        // caller falls back to the ordinary prompt path.
+        return result.objectValue != nil
+    }
+
     func refreshModels() async {
         guard connectionState.isReady else { return }
         do {
@@ -639,9 +686,14 @@ final class AppModel {
         isLoadingConversation = true
         let streamID = "follow-\(generation)"
         let jobsID = "jobs-\(generation)"
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard let self, self.selectedSessionID == id else { return }
+            await self.refreshCommands()
+        }
         if parent == nil {
             Task { [weak self] in
-                guard let self else { return }
+                guard let self, self.jobsStreamID == jobsID else { return }
                 _ = try? await self.bridge.request("stream.open", params: .object([
                     "id": .string(jobsID),
                     "endpoint": .string("job/list"),
@@ -651,7 +703,7 @@ final class AppModel {
         }
         let address = followAddress
         Task { [weak self] in
-            guard let self else { return }
+            guard let self, self.followStreamID == streamID else { return }
             do {
                 _ = try await self.bridge.request("stream.open", params: .object([
                     "id": .string(streamID),
@@ -784,6 +836,46 @@ final class AppModel {
         }
     }
 
+    func renameWorkspace(_ workspace: WorkspaceItem, to title: String) async {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            let result = try await bridge.request("host.call", params: .object([
+                "namespace": .string("workspace"),
+                "method": .string("rename"),
+                "args": .object([
+                    "request": .object([
+                        "workspaceId": .string(workspace.workspaceId),
+                        "title": .string(trimmed)
+                    ])
+                ])
+            ]))
+            if let updated = try? result["workspace"]?.decode(WorkspaceItem.self),
+               let index = workspaces.firstIndex(where: { $0.workspaceId == workspace.workspaceId }) {
+                workspaces[index] = updated
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func deleteWorkspace(_ workspace: WorkspaceItem) async {
+        do {
+            _ = try await bridge.request("host.call", params: .object([
+                "namespace": .string("workspace"),
+                "method": .string("delete"),
+                "args": .object(["request": .object(["workspaceId": .string(workspace.workspaceId)])])
+            ]))
+            workspaces.removeAll { $0.workspaceId == workspace.workspaceId }
+            if selectedWorkspaceID == workspace.workspaceId {
+                selectedWorkspaceID = workspaces.first?.workspaceId
+                selectSession(nil)
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func renameSession(_ session: SessionSummary, to title: String) async {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -862,6 +954,19 @@ final class AppModel {
               selectedSession?.isSubagent != true, !isSending else { return }
         isSending = true
         let requestID = UUID().uuidString.lowercased()
+        if attachments.isEmpty, text.hasPrefix("/") {
+            do {
+                if try await executeCommand(text, sessionID: sessionID) {
+                    draft = ""
+                    isSending = false
+                    return
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+                isSending = false
+                return
+            }
+        }
         let sentAttachments = attachments
         var content: [JSONValue] = []
         if !text.isEmpty {
@@ -1142,6 +1247,8 @@ final class AppModel {
             }
         case "settings/document-updated", "llm/models-updated", "llm/adapters-updated":
             Task { await refreshModels() }
+        case "commands/change":
+            Task { await refreshCommands() }
         default:
             break
         }

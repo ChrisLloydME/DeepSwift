@@ -10,24 +10,24 @@ enum BridgeProtocol {
     static let version = 1
 }
 
-struct BridgeRequest: Encodable, Sendable {
+nonisolated struct BridgeRequest: Encodable, Sendable {
     let id: String
     let method: String
     let params: JSONValue
 }
 
-struct BridgeNotification: Sendable {
+nonisolated struct BridgeNotification: Sendable {
     let event: String
     let data: JSONValue
 }
 
-struct BridgeResponseEnvelope: Decodable, Sendable {
+nonisolated struct BridgeResponseEnvelope: Decodable, Sendable {
     let id: String?
     let result: JSONValue?
     let error: BridgeResponseError?
 }
 
-struct BridgeResponseError: Decodable, Sendable {
+nonisolated struct BridgeResponseError: Decodable, Sendable {
     let code: String
     let message: String
     let details: JSONValue?

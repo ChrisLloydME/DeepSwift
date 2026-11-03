@@ -170,6 +170,7 @@ struct ConversationProjection: Sendable {
     private(set) var firstSeq: Int?
     private(set) var hasMore: Bool = false
     private(set) var isLoaded: Bool = false
+    private(set) var permissionPreset: String?
 
     private var seenSequences: Set<Int> = []
     private var indexByItemID: [String: Int] = [:]
@@ -188,6 +189,7 @@ struct ConversationProjection: Sendable {
         firstSeq = nil
         hasMore = false
         isLoaded = false
+        permissionPreset = nil
         seenSequences = []
         indexByItemID = [:]
         toolIndexByCallID = [:]
@@ -273,6 +275,19 @@ struct ConversationProjection: Sendable {
             applyTurnEnd(event)
         case "session/title":
             if let value = event.data["title"]?.stringValue { title = value }
+        case "permission/preset":
+            if let value = event.data["preset"]?.stringValue { permissionPreset = value }
+        case "command/done":
+            let text = event.data["text"]?.stringValue
+            let kind = event.data["kind"]?.stringValue
+            if let text, !text.isEmpty {
+                appendNotice(
+                    id: "command-\(event.seq)",
+                    seq: event.seq,
+                    time: event.date,
+                    kind: kind == "error" ? .error(text: text) : .notice(text: text)
+                )
+            }
         case "error", "turn/error":
             let message = event.data["message"]?.stringValue ?? "The agent reported an error."
             appendNotice(id: "error-\(event.seq)", seq: event.seq, time: event.date, kind: .error(text: message))

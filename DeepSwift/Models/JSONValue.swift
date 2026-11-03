@@ -100,22 +100,22 @@ enum JSONValue: Codable, Hashable, Sendable {
     }
 
     /// Decode this tree into a typed model.
-    func decode<T: Decodable>(_ type: T.Type) throws -> T {
+    nonisolated func decode<T: Decodable>(_ type: T.Type) throws -> T {
         let data = try JSONEncoder().encode(self)
         return try JSONDecoder().decode(type, from: data)
     }
 
     /// Encode a value into a JSON tree.
-    static func encode<T: Encodable>(_ value: T) throws -> JSONValue {
+    nonisolated static func encode<T: Encodable>(_ value: T) throws -> JSONValue {
         let data = try JSONEncoder().encode(value)
         return try JSONDecoder().decode(JSONValue.self, from: data)
     }
 
-    static func dictionary(_ values: [String: JSONValue]) -> JSONValue {
+    nonisolated static func dictionary(_ values: [String: JSONValue]) -> JSONValue {
         .object(values)
     }
 
-    static func from(any value: Any) -> JSONValue? {
+    nonisolated static func from(any value: Any) -> JSONValue? {
         switch value {
         case is NSNull:
             return .null
