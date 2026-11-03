@@ -19,7 +19,7 @@ automation tasks are excluded by product scope.
 | Slash commands | Yes | Complete | — | Swift unit tests |
 | File references/attachments | Yes | Complete | Text + PNG/JPEG/GIF/WebP input | Swift unit tests |
 | Permissions presets | Yes | Complete | Uses official `/permission` command; hides when absent | Live catalog probe; Swift unit test |
-| Agent presets | Yes | Complete | Official `agentPresets/list/select`; hidden after the first turn locks composition | Live roster probe; Swift unit test |
+| Agent presets | Yes | Complete | Official `agentPresets/list/select`; hidden after the first turn locks composition | Live roster/selection probe; Swift unit test |
 | Workspace register/switch/rename/remove | Yes | Complete | Reveal in Finder | Source |
 | Workspace directory browsing | Yes | Complete | Host-scoped, no direct FileManager reads | Live Host binary read; source |
 | Text/source preview | Yes | Complete | Line gutter + lightweight syntax highlighting; 5,000-line page | SwiftUI preview; source |
@@ -64,12 +64,16 @@ automation tasks are excluded by product scope.
 
 ## Verification levels
 
-- **Xcode build:** app and SwiftTerm framework, zero warnings.
+- **Xcode build:** Debug and Release app plus SwiftTerm framework; no code warnings
+  (Xcode's AppIntents metadata note is tooling-only).
 - **Swift unit tests:** focused suites listed in the final report.
 - **Node tests:** bridge protocol, isolation, persistence, multipart binary read.
 - **Isolated Host:** provider catalog, binary file read, terminal controller.
 - **Real OpenCode Go:** model discovery, minimal inference, tool-backed write,
   changed-files summary, and unified diff.
 - **SwiftUI Previews:** model picker, terminal surface, changed-files card, workspace source browser.
-- **Packaged app:** launched through LaunchServices with bundled Node/DSH and a
-  private profile; Host reported ready and exited cleanly.
+- **Packaged app:** Debug and Release bundles launched with bundled Node/DSH and
+  a private profile; the Release Host reported ready and exited cleanly. The
+  Debug app was also launched via LaunchServices with an isolated runtime, where
+  the terminal controller created a PTY, attached a snapshot, and streamed
+  input/output.
