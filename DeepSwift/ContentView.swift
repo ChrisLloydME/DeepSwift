@@ -120,6 +120,10 @@ struct ContentView: View {
             WorkspaceChangesView()
                 .environment(model)
         }
+        .sheet(isPresented: $model.showJobs) {
+            BackgroundJobsView()
+                .environment(model)
+        }
         .sheet(item: Binding(
             get: { model.pendingApprovals.first },
             set: { _ in }

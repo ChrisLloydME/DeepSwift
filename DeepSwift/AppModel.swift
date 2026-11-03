@@ -84,6 +84,7 @@ final class AppModel {
     var showInspector = false
     var showFiles = false
     var showTerminal = false
+    var showJobs = false
     var showSearch = false
     var searchQuery = ""
     var searchResults: [SessionSearchHit] = []

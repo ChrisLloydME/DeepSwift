@@ -82,6 +82,11 @@ struct DeepSwiftApp: App {
                 .keyboardShortcut("t", modifiers: [.command, .shift])
                 .disabled(model.selectedSessionID == nil)
 
+                Button("Background Jobs") {
+                    model.showJobs = true
+                }
+                .keyboardShortcut("j", modifiers: [.command, .shift])
+
                 Button("Review Changed Files") {
                     model.showChanges = true
                 }
