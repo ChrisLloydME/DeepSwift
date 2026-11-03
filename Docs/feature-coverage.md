@@ -19,6 +19,7 @@ automation tasks are excluded by product scope.
 | Slash commands | Yes | Complete | — | Swift unit tests |
 | File references/attachments | Yes | Complete | Text + PNG/JPEG/GIF/WebP input | Swift unit tests |
 | Permissions presets | Yes | Complete | Uses official `/permission` command; hides when absent | Live catalog probe; Swift unit test |
+| Agent presets | Yes | Complete | Official `agentPresets/list/select`; hidden after the first turn locks composition | Live roster probe; Swift unit test |
 | Workspace register/switch/rename/remove | Yes | Complete | Reveal in Finder | Source |
 | Workspace directory browsing | Yes | Complete | Host-scoped, no direct FileManager reads | Live Host binary read; source |
 | Text/source preview | Yes | Complete | Line gutter + lightweight syntax highlighting; 5,000-line page | SwiftUI preview; source |

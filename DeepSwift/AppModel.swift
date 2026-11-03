@@ -1989,7 +1989,7 @@ final class AppModel {
 
     private func captureWorkspaceChange(seq: Int, event: SessionWireEvent) {
         guard event.type == "workspace/changes", let sessionID = selectedSessionID,
-              let turn = event.data["turn"]?.intValue else { return }
+              event.data["turn"]?.intValue != nil else { return }
         if changesSessionID == sessionID, let current = changesSequence, current >= seq { return }
         changesSessionID = sessionID
         changesSequence = seq

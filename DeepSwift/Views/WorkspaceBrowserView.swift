@@ -323,11 +323,11 @@ private enum SyntaxHighlighter {
         }
 
         if ["swift", "js", "ts", "jsx", "tsx", "json", "py", "go", "rs", "java", "kt", "c", "h", "cpp", "m", "mm"].contains(language) {
-            color(#"//[^\n]*|/\*[\s\S]*?\*/"#, .secondary)
-            color(#""(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'"#, .red)
             let keywordPattern = #"\b(?:"# + keywords.sorted().joined(separator: "|") + #")\b"#
             color(keywordPattern, .purple)
             color(#"\b\d+(?:\.\d+)?\b"#, .blue)
+            color(#""(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'"#, .red)
+            color(#"//[^\n]*|/\*[\s\S]*?\*/"#, .secondary)
         } else if language == "md" {
             color(#"^#{1,6} .*$"#, .purple, options: [.anchorsMatchLines])
             color(#"\*\*[^*]+\*\*|`[^`]+`"#, .secondary)
