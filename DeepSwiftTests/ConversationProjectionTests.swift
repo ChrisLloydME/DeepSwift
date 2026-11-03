@@ -163,6 +163,13 @@ struct ConversationProjectionTests {
                 ]
             ]]
         ]))
+        projection.apply(event: try event("turn/end", seq: 6, data: [
+            "turn": 1,
+            "reason": [
+                "kind": "error",
+                "error": ["message": "no API key for provider route", "code": "MISSING_CREDENTIAL"]
+            ]
+        ]))
         #expect(projection.items.count == 1)
         if case let .error(text) = projection.items[0].kind {
             #expect(text == "no API key for provider route")

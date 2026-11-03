@@ -167,13 +167,14 @@ struct PendingQuestion: Identifiable, Hashable, Sendable, Codable {
 /// Text and image parts accepted by the official prompt Remote.
 enum PromptContentPart: Encodable, Sendable {
     case text(String)
-    case image(data: String, mimeType: String)
+    case image(data: String, mediaType: String, name: String?)
 
     enum CodingKeys: String, CodingKey {
         case type
         case text
         case data
-        case mimeType
+        case mediaType
+        case name
     }
 
     func encode(to encoder: Encoder) throws {
@@ -182,10 +183,11 @@ enum PromptContentPart: Encodable, Sendable {
         case let .text(value):
             try container.encode("text", forKey: .type)
             try container.encode(value, forKey: .text)
-        case let .image(data, mimeType):
+        case let .image(data, mediaType, name):
             try container.encode("image", forKey: .type)
             try container.encode(data, forKey: .data)
-            try container.encode(mimeType, forKey: .mimeType)
+            try container.encode(mediaType, forKey: .mediaType)
+            if let name { try container.encode(name, forKey: .name) }
         }
     }
 }

@@ -221,7 +221,7 @@ struct AppModelTests {
         let content = try #require(call.params["args"]?["request"]?["content"]?.arrayValue)
         #expect(content.count == 1)
         #expect(content[0]["type"]?.stringValue == "image")
-        #expect(content[0]["mimeType"]?.stringValue == "image/png")
+        #expect(content[0]["mediaType"]?.stringValue == "image/png")
         #expect(content[0]["data"]?.stringValue == Data([0x89, 0x50, 0x4E, 0x47]).base64EncodedString())
     }
 

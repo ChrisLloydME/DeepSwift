@@ -986,7 +986,8 @@ final class AppModel {
             content.append(.object([
                 "type": .string("image"),
                 "data": .string(attachment.data.base64EncodedString()),
-                "mimeType": .string(attachment.mimeType)
+                "mediaType": .string(attachment.mimeType),
+                "name": .string(attachment.name)
             ]))
         }
         do {
@@ -1027,12 +1028,11 @@ final class AppModel {
             "jpg": "image/jpeg",
             "jpeg": "image/jpeg",
             "gif": "image/gif",
-            "webp": "image/webp",
-            "heic": "image/heic"
+            "webp": "image/webp"
         ]
         let ext = url.pathExtension.lowercased()
         guard let mimeType = supported[ext] else {
-            errorMessage = "Only PNG, JPEG, GIF, WebP, and HEIC images can be attached."
+            errorMessage = "Only PNG, JPEG, GIF, and WebP images can be attached."
             return
         }
         do {
