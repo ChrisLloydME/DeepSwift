@@ -96,6 +96,17 @@ struct ContentView: View {
                 .help("Toggle Inspector (⌥⌘I)")
             }
         }
+        .environment(\.openURL, OpenURLAction { url in
+            if url.isFileURL {
+                Task { await model.openReferencedPath(url.path) }
+                return .handled
+            }
+            if url.scheme == nil {
+                Task { await model.openReferencedPath(url.relativeString) }
+                return .handled
+            }
+            return .systemAction
+        })
         .alert("DeepSwift", isPresented: Binding(
             get: { model.errorMessage != nil },
             set: { if !$0 { model.errorMessage = nil } }

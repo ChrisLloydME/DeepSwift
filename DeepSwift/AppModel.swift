@@ -2041,6 +2041,31 @@ final class AppModel {
     func openFile(_ entry: WorkspaceFileEntry) async {
         guard let sessionID = selectedSessionID else { return }
         let path = filesPath.isEmpty ? entry.name : "\(filesPath)/\(entry.name)"
+        await loadPreview(path: path, sessionID: sessionID)
+    }
+
+    func openReferencedPath(_ rawPath: String) async {
+        guard let sessionID = selectedSessionID else { return }
+        var path = rawPath
+        if let marker = path.firstIndex(of: "#") {
+            path = String(path[..<marker])
+        }
+        path = path.removingPercentEncoding ?? path
+        while path.hasPrefix("./") { path.removeFirst(2) }
+        guard !path.isEmpty else { return }
+        showFiles = true
+
+        let parent = path.split(separator: "/").dropLast().joined(separator: "/")
+        await loadFiles(path: parent)
+        let name = path.split(separator: "/").last.map(String.init) ?? path
+        if let entry = fileListing?.entries.first(where: { $0.name == name }), entry.isFile {
+            await openFile(entry)
+        } else {
+            await loadPreview(path: path, sessionID: sessionID)
+        }
+    }
+
+    private func loadPreview(path: String, sessionID: String) async {
         filePreviewError = nil
         filePreview = nil
         filePreviewBytes = nil
