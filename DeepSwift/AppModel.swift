@@ -5,6 +5,7 @@
 
 import AppKit
 import Foundation
+import PDFKit
 import Observation
 import OSLog
 
@@ -2040,8 +2041,14 @@ final class AppModel {
                 "path": .string(path)
             ]), timeout: .seconds(30))
             let bytes = try result.decode(WorkspaceFileBytes.self)
-            guard bytes.data != nil else {
+            guard let data = bytes.data else {
                 throw BridgeClientError.protocolViolation("The Host returned no file bytes.")
+            }
+            if kind == .image, NSImage(data: data) == nil {
+                throw BridgeClientError.protocolViolation("The image data is not readable.")
+            }
+            if kind == .pdf, PDFDocument(data: data) == nil {
+                throw BridgeClientError.protocolViolation("The PDF data is not readable.")
             }
             filePreviewBytes = bytes
             filePreviewKind = kind

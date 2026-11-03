@@ -319,13 +319,13 @@ struct AppModelTests {
 
     @Test("Image previews use the Host binary endpoint")
     func imagePreviewRequests() async throws {
-        let bytes = Data([0x89, 0x50, 0x4E, 0x47])
+        let bytes = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
         let bridge = MockBridgeService { method, _ in
             if method == "workspace.readBytes" {
                 return .object([
                     "absolutePath": .string("/tmp/work/pixel.png"),
                     "version": .string("v1"),
-                    "bytes": .number(4),
+                    "bytes": .number(Double(bytes.count)),
                     "offset": .number(0),
                     "eof": .bool(true),
                     "dataBase64": .string(bytes.base64EncodedString())
@@ -336,7 +336,7 @@ struct AppModelTests {
         let model = AppModel(bridge: bridge)
         model.selectedSessionID = "session-1"
 
-        await model.openFile(WorkspaceFileEntry(name: "pixel.png", type: "file", size: 4))
+        await model.openFile(WorkspaceFileEntry(name: "pixel.png", type: "file", size: bytes.count))
 
         let requests = await bridge.recordedRequests()
         let read = try #require(requests.first { $0.method == "workspace.readBytes" })

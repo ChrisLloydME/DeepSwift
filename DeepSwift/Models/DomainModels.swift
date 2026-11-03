@@ -271,7 +271,7 @@ struct WorkspaceFileBytes: Codable, Hashable, Sendable {
     var data: Data? { Data(base64Encoded: dataBase64) }
 }
 
-enum WorkspacePreviewKind: String, Sendable {
+enum WorkspacePreviewKind: String, Sendable, Equatable {
     case image
     case pdf
     case unsupported
