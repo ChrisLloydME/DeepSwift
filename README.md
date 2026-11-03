@@ -14,10 +14,10 @@ repository contains no second Agent engine and no WebView or React surface.
 | Native window and navigation | Implemented | `NavigationSplitView`, native sidebar, toolbar, inspector, Settings, window restoration through standard scene behavior |
 | Runtime isolation | Implemented | Explicit isolated `DSH_HOME`, allowlisted child environment, loopback port 0, parent-death watchdog |
 | Runtime lifecycle | Implemented | Start, readiness, unexpected exit, reconnect with backoff, restart, graceful child shutdown |
-| Workspaces | Implemented | List, create from `NSOpenPanel`, select; archive and pin state projected from Host |
-| Sessions | Implemented | List, create, open, history paging, live follow, rename, archive/unarchive, running state |
+| Workspaces | Implemented | List, create from `NSOpenPanel`, rename, remove registration, select; archive and pin state projected from Host |
+| Sessions | Implemented | List, create, open, history paging, live follow, rename, archive/unarchive, running state, subagent browsing |
 | Conversation | Implemented | User/assistant messages, reasoning, streaming text, Markdown, fenced code, tables, tool cards, errors, interruption notices |
-| Message composer | Implemented | AppKit `NSTextView`, IME-safe composition, Enter/Shift-Enter preference, image attachments, drag and drop |
+| Message composer | Implemented | AppKit `NSTextView`, IME-safe composition, Enter/Shift-Enter preference, image attachments, drag and drop, official slash-command suggestions |
 | Tools | Implemented | Generic native tool card with per-tool icon/summary, collapsible arguments/output, errors and completion |
 | Approvals | Implemented | Official Agent-scoped approval waterfall; Allow Once / Reject; fail-closed |
 | User questions | Implemented | Native question sheet with options, multi-select, free text, plan-review detail |

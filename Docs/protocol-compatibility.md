@@ -78,6 +78,8 @@ confined to `Bridge/src/connection.mjs` and `Bridge/src/main.mjs`.
 | `session/modelCatalog` | `{}` | Provider-grouped routable models |
 | `session/selectModel` | `{request:{sessionId,provider,model,reasoningEffort?}}` | Session model selection |
 | `session/search` | `{request:{query}}` | Durable message-content search |
+| `commands/list` | `{agentId}` | Effective slash-command descriptors |
+| `commands/execute` | `{agentId,line,submittedAttachments}` | Execute a recognized slash command; null means fall back to prompt |
 | `job/list` (stream) | `{request:{sessionId}}` | Complete visible job roster |
 | `job/kill` | `{request:{sessionId,jobId}}` | Human cancellation of a job |
 | `workspaceFiles/list` | `{workspaceFileScopeId,path}` | Workspace directory entries |
@@ -138,7 +140,7 @@ Currently rendered:
 - `assistant/message` (`message.content`: text, reasoning, tool-call);
 - `assistant/attempt` (message and nested stream failure);
 - `tool/call`, `tool/result`;
-- `session/title`, `turn/end`;
+- `session/title`, `permission/preset`, `command/done`, `turn/end`;
 - process-local `assistant-stream` frames (`start`, `chunk`, `end`) with
   `text-delta`, `reasoning-delta`, `tool-call-delta`, `block-end`.
 
