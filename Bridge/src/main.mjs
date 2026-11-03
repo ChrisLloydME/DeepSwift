@@ -12,7 +12,7 @@ import { createInterface } from 'node:readline'
 import { existsSync, readFileSync, statSync, appendFileSync, mkdirSync } from 'node:fs'
 import { isAbsolute, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { HostRuntime } from './host-process.mjs'
+import { HostRuntime, assertIsolatedHome } from './host-process.mjs'
 import { HostConnection } from './connection.mjs'
 import { BridgeError, PROTOCOL_VERSION, parseRequestLine } from './protocol.mjs'
 
@@ -39,10 +39,11 @@ function readConfiguration() {
   try {
     dshVersion = JSON.parse(readFileSync(manifestPath, 'utf8')).version ?? 'unknown'
   } catch { /* reported as unknown; the Host still runs */ }
+  const isolatedHome = assertIsolatedHome(home)
   return {
     nodeBin,
     hostBin,
-    home: resolve(home),
+    home: isolatedHome,
     dshVersion,
     allowProviderEnv: process.env.DEEPSWIFT_ALLOW_PROVIDER_ENV === '1',
     cwd: process.env.DEEPSWIFT_BRIDGE_CWD,
@@ -51,20 +52,25 @@ function readConfiguration() {
   }
 }
 
-let configuration
-try {
-  configuration = readConfiguration()
-} catch (error) {
-  write({ event: 'bridge.failed', data: { code: error.code ?? 'bridge/configuration', message: error.message } })
-  process.exitCode = 1
-  process.exit(1)
-}
-
-mkdirSync(dirname(configuration.logPath), { recursive: true, mode: 0o700 })
 let stdoutWritable = true
 let stdoutClosed = false
 let stderrWritable = true
 
+let configuration
+try {
+  configuration = readConfiguration()
+} catch (error) {
+  const frame = JSON.stringify({
+    event: 'bridge.failed',
+    data: { code: error.code ?? 'bridge/configuration', message: error.message },
+  }) + '\n'
+  try { process.stdout.write(frame) } catch { /* the parent may already be gone */ }
+  // Let the stdout pipe flush before terminating the configuration failure.
+  await new Promise((resolve) => process.stdout.write('', resolve))
+  process.exit(1)
+}
+
+mkdirSync(dirname(configuration.logPath), { recursive: true, mode: 0o700 })
 function logLine(text) {
   try { appendFileSync(configuration.logPath, `${new Date().toISOString()} ${text}\n`) } catch { /* diagnostics never break the bridge */ }
   if (!stderrWritable) return
@@ -132,14 +138,25 @@ async function startHost() {
   starting = (async () => {
     hostState = 'starting'
     emit('runtime.starting', { home: configuration.home, dshVersion: configuration.dshVersion })
-    runtime = new HostRuntime({
-      nodeBin: configuration.nodeBin,
-      hostBin: configuration.hostBin,
-      home: configuration.home,
-      ...(configuration.cwd === undefined ? {} : { cwd: configuration.cwd }),
-      patches: configuration.patches,
-      allowProviderEnv: configuration.allowProviderEnv,
-    })
+    try {
+      runtime = new HostRuntime({
+        nodeBin: configuration.nodeBin,
+        hostBin: configuration.hostBin,
+        home: configuration.home,
+        ...(configuration.cwd === undefined ? {} : { cwd: configuration.cwd }),
+        patches: configuration.patches,
+        allowProviderEnv: configuration.allowProviderEnv,
+      })
+    } catch (error) {
+      hostState = 'failed'
+      logLine(`isolated home rejected: ${error instanceof Error ? error.message : String(error)}`)
+      emit('runtime.failed', {
+        code: error instanceof BridgeError ? error.code : 'runtime/isolation',
+        message: error instanceof Error ? error.message : String(error),
+        stderr: '',
+      })
+      return false
+    }
     runtime.on('exit', ({ code, signal, stderr }) => {
       hostState = 'exited'
       eventStreamPresent = false
