@@ -79,6 +79,7 @@ struct InspectorView: View {
                     .textSelection(.enabled)
                     .lineLimit(2)
                     .truncationMode(.middle)
+                    .fixedSize(horizontal: false, vertical: true)
                     .help(session.sessionId)
             }
 
@@ -140,6 +141,7 @@ struct InspectorView: View {
                         .multilineTextAlignment(.trailing)
                         .lineLimit(2)
                         .truncationMode(.middle)
+                        .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                         .help(workspace.path)
                 }
@@ -165,6 +167,7 @@ struct InspectorView: View {
                         .multilineTextAlignment(.trailing)
                         .lineLimit(2)
                         .truncationMode(.middle)
+                        .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                         .help(cwd)
                 }
@@ -300,6 +303,7 @@ struct InspectorView: View {
                         .multilineTextAlignment(.trailing)
                         .lineLimit(2)
                         .truncationMode(.middle)
+                        .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
                         .help(home)
                 }
