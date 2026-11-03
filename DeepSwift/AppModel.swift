@@ -154,6 +154,8 @@ final class AppModel {
                 let credential = reference.map { providerCredentials[$0] }
                     ?? providerCredentials[ProviderRow.derivedCredentialRef(for: provider)]
                 let models = profile["models"]?.arrayValue ?? []
+                let hasModelOverride = userProfile?["models"] != nil
+                let installedCount = installedProviderModels[provider]?.count ?? 0
                 rows.append(ProviderRow(
                     id: provider,
                     displayName: provider == "opencode-go"
@@ -170,7 +172,7 @@ final class AppModel {
                     defaultBaseURL: entry?.defaultBaseURL,
                     baseURLEnv: entry?.baseURLEnv ?? [],
                     effectiveModels: models,
-                    modelCount: max(models.count, installedProviderModels[provider]?.count ?? 0),
+                    modelCount: hasModelOverride ? models.count : max(models.count, installedCount),
                     error: entry?.error,
                     userProfile: userProfile,
                     effectiveProfile: profileValue
