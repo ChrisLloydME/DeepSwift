@@ -364,9 +364,16 @@ final class AppModel {
                 selectedWorkspaceID = workspaces.first?.workspaceId
             }
         }
-        if selectedSessionID == nil, let savedSession = UserDefaults.standard.string(forKey: "selectedSessionID"),
-           sessions.contains(where: { $0.sessionId == savedSession }) {
-            selectSession(savedSession)
+        if selectedSessionID == nil {
+            let savedSession = UserDefaults.standard.string(forKey: "selectedSessionID")
+            if let savedSession, sessions.contains(where: { $0.sessionId == savedSession }) {
+                selectSession(savedSession)
+            } else {
+                let candidates = selectedWorkspace.map { sessions(in: $0) } ?? visibleSessions
+                if let first = candidates.first {
+                    selectSession(first.sessionId)
+                }
+            }
         }
     }
 
@@ -398,6 +405,7 @@ final class AppModel {
         case "snapshot":
             conversation.apply(snapshot: frame)
             isLoadingConversation = false
+            logger.info("Conversation snapshot: \(self.conversation.items.count, privacy: .public) items, more=\(self.conversation.hasMore, privacy: .public)")
             if let title = conversation.title, let id = conversationSessionID,
                let index = sessions.firstIndex(where: { $0.sessionId == id }) {
                 sessions[index] = sessions[index].replacingTitle(title)
@@ -605,6 +613,8 @@ final class AppModel {
         guard let attempt = account?.attempt,
               let urlString = attempt.authorizeUrl,
               let url = URL(string: urlString),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "https",
               openedSignInAttemptID != attempt.id else { return }
         openedSignInAttemptID = attempt.id
         NSWorkspace.shared.open(url)
@@ -1145,16 +1155,17 @@ final class AppModel {
 
     func loadOlderMessages() async {
         guard !isLoadingOlder, conversation.hasMore, let sessionID = selectedSessionID,
-              let beforeSeq = conversation.firstSeq else { return }
+              let beforeSeq = conversation.firstSeq, conversation.lastSeq >= 0 else { return }
         isLoadingOlder = true
         defer { isLoadingOlder = false }
         do {
             let result = try await bridge.request("host.call", params: .object([
                 "namespace": .string("session"),
-                "method": .string("events"),
+                "method": .string("page"),
                 "args": .object([
                     "request": .object([
                         "address": .object(["kind": .string("session"), "sessionId": .string(sessionID)]),
+                        "throughSeq": .number(Double(conversation.lastSeq)),
                         "beforeSeq": .number(Double(beforeSeq)),
                         "maxMessages": .number(120)
                     ])

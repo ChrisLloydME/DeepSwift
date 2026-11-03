@@ -150,6 +150,61 @@ struct AppModelTests {
         #expect(!afterSend.contains { $0.method == "host.call" && $0.params["method"]?.stringValue == "prompt" })
     }
 
+    @Test("Older history uses session/page with the required cursor")
+    func olderHistoryRequest() async throws {
+        let olderEvent = JSONValue.object([
+            "type": .string("event"),
+            "event": .object([
+                "type": .string("user/message"),
+                "seq": .number(1),
+                "time": .number(1_700_000_000_000),
+                "data": .object([
+                    "id": .string("u1"),
+                    "content": .array([.object(["type": .string("text"), "text": .string("Older")])]),
+                    "source": .object(["kind": .string("user")])
+                ])
+            ])
+        ])
+        let bridge = MockBridgeService { method, params in
+            if params["method"]?.stringValue == "page" {
+                return .object(["records": .array([olderEvent]), "hasMore": .bool(false)])
+            }
+            return .object([:])
+        }
+        let model = AppModel(bridge: bridge)
+        model.selectedSessionID = "session-1"
+        model.conversation.apply(snapshot: .object([
+            "header": .object(["id": .string("session-1")]),
+            "cursor": .number(20),
+            "hasMore": .bool(true),
+            "records": .array([
+                .object([
+                    "type": .string("event"),
+                    "event": .object([
+                        "type": .string("user/message"),
+                        "seq": .number(10),
+                        "time": .number(1_700_000_000_000),
+                        "data": .object([
+                            "id": .string("u10"),
+                            "content": .array([.object(["type": .string("text"), "text": .string("Recent")])]),
+                            "source": .object(["kind": .string("user")])
+                        ])
+                    ])
+                ])
+            ])
+        ]))
+
+        await model.loadOlderMessages()
+
+        let requests = await bridge.recordedRequests()
+        let call = try #require(requests.first { $0.method == "host.call" && $0.params["method"]?.stringValue == "page" })
+        let request = try #require(call.params["args"]?["request"])
+        #expect(request["throughSeq"]?.intValue == 20)
+        #expect(request["beforeSeq"]?.intValue == 10)
+        #expect(model.conversation.items.count == 2)
+        #expect(model.conversation.items.first?.seq == 1)
+    }
+
     @Test("Image attachments become official image prompt blocks")
     func imageAttachmentPrompt() async throws {
         let bridge = MockBridgeService()

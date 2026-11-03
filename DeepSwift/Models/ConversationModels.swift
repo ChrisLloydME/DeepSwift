@@ -175,7 +175,6 @@ struct ConversationProjection: Sendable {
     private var seenSequences: Set<Int> = []
     private var indexByItemID: [String: Int] = [:]
     private var toolIndexByCallID: [String: Int] = [:]
-    private var assistantIndexByMessageID: [String: Int] = [:]
 
     var streamingText: String { live?.text ?? "" }
     var streamingReasoning: String { live?.reasoning ?? "" }
@@ -193,7 +192,6 @@ struct ConversationProjection: Sendable {
         seenSequences = []
         indexByItemID = [:]
         toolIndexByCallID = [:]
-        assistantIndexByMessageID = [:]
     }
 
     mutating func apply(snapshot value: JSONValue) {
@@ -330,7 +328,6 @@ struct ConversationProjection: Sendable {
                 items[index].kind = .assistant(text: text, reasoning: reasoning.isEmpty ? nil : reasoning)
             } else {
                 appendItem(ChatItem(id: id, seq: event.seq, time: event.date, kind: .assistant(text: text, reasoning: reasoning.isEmpty ? nil : reasoning)))
-                assistantIndexByMessageID[messageID ?? id] = indexByItemID[id]
             }
         }
 
@@ -394,6 +391,8 @@ struct ConversationProjection: Sendable {
             message = event.data["reason"]?["error"]?["message"]?.stringValue
                 ?? event.data["reason"]?["message"]?.stringValue
                 ?? "The turn ended with an error."
+            appendNotice(id: "turn-end-\(event.seq)", seq: event.seq, time: event.date, kind: .error(text: message))
+            return
         default:
             message = "The turn ended: \(kind)."
         }
@@ -414,6 +413,17 @@ struct ConversationProjection: Sendable {
 
     private mutating func appendNotice(id: String, seq: Int, time: Date, kind: ChatItem.Kind) {
         guard indexByItemID[id] == nil else { return }
+        // The same failure can arrive from both assistant/attempt and turn/end.
+        // Keep one readable error instead of two identical rows.
+        if case let .error(newText) = kind,
+           items.contains(where: {
+               if case let .error(existing) = $0.kind {
+                   return existing == newText || existing.contains(newText) || newText.contains(existing)
+               }
+               return false
+           }) {
+            return
+        }
         appendItem(ChatItem(id: id, seq: seq, time: time, kind: kind))
     }
 
@@ -476,6 +486,18 @@ struct ConversationProjection: Sendable {
         case "reasoning-delta":
             live?.reasoning += value["text"]?.stringValue ?? ""
         case "tool-call-delta":
+            if let name = value["name"]?.stringValue, !name.isEmpty, live?.toolNames.last != name {
+                live?.toolNames.append(name)
+            }
+        case "text-chunks":
+            if let texts = value["texts"]?.arrayValue {
+                live?.text += texts.compactMap(\.stringValue).joined()
+            }
+        case "reasoning-chunks":
+            if let texts = value["texts"]?.arrayValue {
+                live?.reasoning += texts.compactMap(\.stringValue).joined()
+            }
+        case "tool-call-chunks":
             if let name = value["name"]?.stringValue, !name.isEmpty, live?.toolNames.last != name {
                 live?.toolNames.append(name)
             }

@@ -72,7 +72,7 @@ confined to `Bridge/src/connection.mjs` and `Bridge/src/main.mjs`.
 | `session/rename` | `{request:{sessionId,title}}` | Rename |
 | `session/prompt` | `{request:{requestId,sessionId,mode,content,clientTimeZone?}}` | Submit text/image content |
 | `session/cancel` | `{request:{sessionId}}` | Cancel the active turn |
-| `session/events` | `{request:{address,beforeSeq?,maxMessages?,turnWindow?}}` | Read older history |
+| `session/page` | `{request:{address,throughSeq,beforeSeq?,maxMessages?,turnWindow?}}` | Read older history; `throughSeq` is required by 0.2.1-rc.5 |
 | `session/follow` (stream) | `{request:{address,activate?,assistantStream?,maxMessages?,turnWindow?}}` | Opening snapshot + live durable events + assistant deltas |
 | `session/control` (stream) | `{}` | Cross-session projection baseline/changes |
 | `session/modelCatalog` | `{}` | Provider-grouped routable models |
