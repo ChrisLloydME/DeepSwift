@@ -170,13 +170,7 @@ struct WorkspaceBrowserView: View {
                     }
                     .padding(12)
                     Divider()
-                    ScrollView([.vertical, .horizontal]) {
-                        Text(numbered(preview.text))
-                            .font(.system(.callout, design: .monospaced))
-                            .textSelection(.enabled)
-                            .padding(12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                    SourceCodeView(text: preview.text, path: preview.absolutePath)
                     if preview.eof == false {
                         Text("Only the first page is shown. Use the Host file tools for larger files.")
                             .font(.caption)
@@ -257,16 +251,6 @@ struct WorkspaceBrowserView: View {
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: workspacePath).appendingPathComponent(path)])
     }
 
-    private func numbered(_ text: String) -> String {
-        let lines = text.components(separatedBy: .newlines)
-        let width = String(lines.count).count
-        return lines.enumerated().map { index, line in
-            let number = String(index + 1)
-            let padding = String(repeating: " ", count: max(0, width - number.count))
-            return "\(padding)\(number)  \(line)"
-        }.joined(separator: "\n")
-    }
-
     private func fileSymbol(_ name: String) -> String {
         switch URL(fileURLWithPath: name).pathExtension.lowercased() {
         case "swift": return "swift"
@@ -278,6 +262,79 @@ struct WorkspaceBrowserView: View {
         default: return "doc"
         }
     }
+
+// MARK: - Source viewing
+
+private struct SourceCodeView: View {
+    let text: String
+    let path: String
+
+    var body: some View {
+        ScrollView([.vertical, .horizontal]) {
+            HStack(alignment: .top, spacing: 14) {
+                Text(lineNumbers)
+                    .font(.system(.callout, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .multilineTextAlignment(.trailing)
+                    .textSelection(.disabled)
+                Text(SyntaxHighlighter.attributed(text, path: path))
+                    .font(.system(.callout, design: .monospaced))
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: true, vertical: true)
+            }
+            .padding(12)
+        }
+    }
+
+    private var lineNumbers: String {
+        let count = max(1, text.components(separatedBy: .newlines).count)
+        let width = String(count).count
+        return (1...count).map { number in
+            let value = String(number)
+            return String(repeating: " ", count: max(0, width - value.count)) + value
+        }.joined(separator: "\n")
+    }
+}
+
+private enum SyntaxHighlighter {
+    private static let keywords: Set<String> = [
+        "actor", "as", "async", "await", "break", "case", "catch", "class", "const", "continue",
+        "default", "defer", "do", "else", "enum", "extension", "fallthrough", "false", "fileprivate",
+        "final", "for", "func", "guard", "if", "import", "in", "indirect", "init", "inout", "internal",
+        "is", "let", "nil", "open", "operator", "override", "private", "protocol", "public", "repeat",
+        "return", "self", "static", "struct", "subscript", "super", "switch", "throw", "throws", "true",
+        "try", "typealias", "var", "where", "while", "with", "yield",
+        "function", "def", "lambda", "new", "this", "typeof", "instanceof", "export", "extends", "implements",
+        "interface", "package", "void", "null", "undefined", "None", "True", "False", "and", "or", "not", "elif", "except", "finally", "from", "global", "pass", "raise", "with"
+    ]
+
+    static func attributed(_ text: String, path: String) -> AttributedString {
+        var value = AttributedString(text)
+        let full = NSRange(text.startIndex..<text.endIndex, in: text)
+        let language = URL(fileURLWithPath: path).pathExtension.lowercased()
+
+        func color(_ pattern: String, _ color: Color, options: NSRegularExpression.Options = []) {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: options) else { return }
+            for match in regex.matches(in: text, range: full) {
+                guard let range = Range(match.range, in: text),
+                      let attributedRange = Range(range, in: value) else { continue }
+                value[attributedRange].foregroundColor = color
+            }
+        }
+
+        if ["swift", "js", "ts", "jsx", "tsx", "json", "py", "go", "rs", "java", "kt", "c", "h", "cpp", "m", "mm"].contains(language) {
+            color(#"//[^\n]*|/\*[\s\S]*?\*/"#, .secondary)
+            color(#""(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'"#, .red)
+            let keywordPattern = #"\b(?:"# + keywords.sorted().joined(separator: "|") + #")\b"#
+            color(keywordPattern, .purple)
+            color(#"\b\d+(?:\.\d+)?\b"#, .blue)
+        } else if language == "md" {
+            color(#"^#{1,6} .*$"#, .purple, options: [.anchorsMatchLines])
+            color(#"\*\*[^*]+\*\*|`[^`]+`"#, .secondary)
+        }
+        return value
+    }
+}
 
 // MARK: - Native media previews
 
