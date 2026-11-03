@@ -12,7 +12,7 @@ struct DeepSwiftApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        WindowGroup {
+        Window("DeepSwift", id: "main") {
             ContentView()
                 .environment(model)
                 .frame(minWidth: 880, minHeight: 580)
@@ -22,6 +22,7 @@ struct DeepSwiftApp: App {
                 }
         }
         .defaultSize(width: 1_240, height: 820)
+        .windowResizability(.contentMinSize)
         .windowToolbarStyle(.unified(showsTitle: true))
         .commands {
             CommandGroup(replacing: .newItem) {
