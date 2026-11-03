@@ -229,7 +229,7 @@ of the stable session vocabulary.
 | Diff rendering | Supported | `/api/changes.summary` and `/api/changes.diff` |
 | Session fork / queue edit | API known, UI absent | Not exposed rather than approximated |
 | Plugin/skill management | Excluded by product scope | Use official DSH tooling |
-| Subagent steering | Read-only browsing | No prompt is sent to a subagent session |
+| Subagent steering | Supported | Official `subagents/prompt` Queue/Steer continuation |
 | `session/load` transcript replay | Not used | `session/follow` snapshot is authoritative |
 | Additional workspace directories | Unsupported by upstream ACP/Desktop flows | Single session workspace |
 
