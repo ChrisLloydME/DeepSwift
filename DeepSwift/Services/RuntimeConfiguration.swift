@@ -81,6 +81,7 @@ struct RuntimeConfiguration: Sendable {
             candidates.append(resources.appendingPathComponent("Node/bin/node").path)
             candidates.append(resources.appendingPathComponent("Node/node").path)
         }
+        #if DEBUG
         candidates.append(contentsOf: [
             "/opt/homebrew/bin/node",
             "/usr/local/bin/node",
@@ -88,6 +89,7 @@ struct RuntimeConfiguration: Sendable {
             (("~/.volta/bin/node") as NSString).expandingTildeInPath,
             (("~/.nvm/current/bin/node") as NSString).expandingTildeInPath
         ])
+        #endif
         for candidate in candidates where fileManager.isExecutableFile(atPath: candidate) {
             return candidate
         }
@@ -101,7 +103,9 @@ struct RuntimeConfiguration: Sendable {
             candidates.append(resources.appendingPathComponent("Bridge/main.mjs").path)
             candidates.append(resources.appendingPathComponent("Bridge/src/main.mjs").path)
         }
+        #if DEBUG
         candidates.append(root.appendingPathComponent("Bridge/src/main.mjs").path)
+        #endif
         for candidate in candidates where fileManager.fileExists(atPath: candidate) {
             return candidate
         }
@@ -115,7 +119,9 @@ struct RuntimeConfiguration: Sendable {
             candidates.append(resources.appendingPathComponent("DSH/node_modules/@deepseek-ai/dsh/lib/bin.js").path)
             candidates.append(resources.appendingPathComponent("DSH/lib/bin.js").path)
         }
+        #if DEBUG
         candidates.append(root.appendingPathComponent(".local/runtime/bridge/node_modules/@deepseek-ai/dsh/lib/bin.js").path)
+        #endif
         for candidate in candidates where fileManager.fileExists(atPath: candidate) {
             return candidate
         }
