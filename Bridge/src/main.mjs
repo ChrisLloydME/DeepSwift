@@ -488,6 +488,42 @@ async function dispatch(method, params) {
       const { eventId } = params
       return respondInteraction(eventId, { kind: 'next' })
     }
+    case 'workspace.changesSummary': {
+      if (connection === undefined || hostState !== 'ready') throw new BridgeError('connection/not-ready', 'DSH Host is not ready')
+      const { sessionId, seq } = params
+      if (typeof sessionId !== 'string' || sessionId.length === 0 || !Number.isSafeInteger(seq)) {
+        throw new BridgeError('bridge/invalid-request', 'workspace.changesSummary requires sessionId and seq')
+      }
+      return connection.getJSON('/api/changes.summary', { sessionId, seq }, { timeoutMs: 20_000 })
+    }
+    case 'workspace.changesDiff': {
+      if (connection === undefined || hostState !== 'ready') throw new BridgeError('connection/not-ready', 'DSH Host is not ready')
+      const { sessionId, seq, index } = params
+      if (typeof sessionId !== 'string' || sessionId.length === 0 || !Number.isSafeInteger(seq) || !Number.isSafeInteger(index) || index < 0) {
+        throw new BridgeError('bridge/invalid-request', 'workspace.changesDiff requires sessionId, seq, and a non-negative index')
+      }
+      return connection.getJSON('/api/changes.diff', { sessionId, seq, index }, { timeoutMs: 30_000 })
+    }
+    case 'workspace.readBytes': {
+      if (connection === undefined || hostState !== 'ready') throw new BridgeError('connection/not-ready', 'DSH Host is not ready')
+      const { sessionId, path, options } = params
+      if (typeof sessionId !== 'string' || sessionId.length === 0 || typeof path !== 'string' || path.length === 0) {
+        throw new BridgeError('bridge/invalid-request', 'workspace.readBytes requires sessionId and path')
+      }
+      const value = await connection.rpcBinary('workspaceFiles', 'readBytes', {
+        workspaceFileScopeId: sessionId,
+        path,
+        options: typeof options === 'object' && options !== null ? options : {},
+      }, { timeoutMs: 30_000 })
+      if (!(value?.data instanceof Uint8Array)) {
+        throw new BridgeError('connection/protocol', 'workspace.readBytes returned no native data')
+      }
+      if (value.data.byteLength > 32 * 1024 * 1024) {
+        throw new BridgeError('workspace/too-large', 'The selected file is too large to preview')
+      }
+      const { data, ...metadata } = value
+      return { ...metadata, dataBase64: Buffer.from(data).toString('base64') }
+    }
     case 'opencode.discoverModels': {
       return discoverOpenCodeGoModels()
     }

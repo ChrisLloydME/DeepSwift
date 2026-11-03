@@ -73,6 +73,22 @@ struct ContentView: View {
                 .disabled(model.selectedSessionID == nil)
 
                 Button {
+                    model.showChanges = true
+                } label: {
+                    Label("Changes", systemImage: "plus.forwardslash.minus")
+                }
+                .help("Review Changed Files")
+                .disabled(model.changesSummary == nil)
+
+                Button {
+                    model.showTerminal = true
+                } label: {
+                    Label("Terminal", systemImage: "terminal")
+                }
+                .help("Open Terminal (⇧⌘T)")
+                .disabled(model.selectedSessionID == nil)
+
+                Button {
                     model.showInspector.toggle()
                 } label: {
                     Label("Inspector", systemImage: "sidebar.trailing")
@@ -94,6 +110,14 @@ struct ContentView: View {
         }
         .sheet(isPresented: $model.showFiles) {
             WorkspaceBrowserView()
+                .environment(model)
+        }
+        .sheet(isPresented: $model.showTerminal) {
+            TerminalWorkspaceView()
+                .environment(model)
+        }
+        .sheet(isPresented: $model.showChanges) {
+            WorkspaceChangesView()
                 .environment(model)
         }
         .sheet(item: Binding(

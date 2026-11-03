@@ -68,6 +68,24 @@ struct DeepSwiftApp: App {
                     model.showSearch = true
                 }
                 .keyboardShortcut("f", modifiers: [.command, .shift])
+
+                Button("Workspace Files") {
+                    model.showFiles = true
+                }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+                .disabled(model.selectedSessionID == nil)
+
+                Button("Terminal") {
+                    model.showTerminal = true
+                }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
+                .disabled(model.selectedSessionID == nil)
+
+                Button("Review Changed Files") {
+                    model.showChanges = true
+                }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+                .disabled(model.changesSummary == nil)
             }
         }
 

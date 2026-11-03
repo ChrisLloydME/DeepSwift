@@ -64,6 +64,13 @@ struct ChatView: View {
                             .id(item.id)
                     }
 
+                    if let summary = model.changesSummary {
+                        WorkspaceChangesCard(summary: summary) {
+                            model.showChanges = true
+                        }
+                        .id("changes-\(summary.turn)")
+                    }
+
                     ForEach(model.pendingPrompts) { prompt in
                         PendingUserMessage(prompt: prompt)
                             .id("pending-\(prompt.id)")

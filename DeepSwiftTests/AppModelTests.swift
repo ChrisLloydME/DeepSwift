@@ -296,6 +296,36 @@ struct AppModelTests {
         #expect(model.filePreview?.text == "# Readme")
     }
 
+    @Test("Image previews use the Host binary endpoint")
+    func imagePreviewRequests() async throws {
+        let bytes = Data([0x89, 0x50, 0x4E, 0x47])
+        let bridge = MockBridgeService { method, _ in
+            if method == "workspace.readBytes" {
+                return .object([
+                    "absolutePath": .string("/tmp/work/pixel.png"),
+                    "version": .string("v1"),
+                    "bytes": .number(4),
+                    "offset": .number(0),
+                    "eof": .bool(true),
+                    "dataBase64": .string(bytes.base64EncodedString())
+                ])
+            }
+            return .object([:])
+        }
+        let model = AppModel(bridge: bridge)
+        model.selectedSessionID = "session-1"
+
+        await model.openFile(WorkspaceFileEntry(name: "pixel.png", type: "file", size: 4))
+
+        let requests = await bridge.recordedRequests()
+        let read = try #require(requests.first { $0.method == "workspace.readBytes" })
+        #expect(read.params["sessionId"]?.stringValue == "session-1")
+        #expect(read.params["path"]?.stringValue == "pixel.png")
+        #expect(model.filePreviewKind == .image)
+        #expect(model.filePreviewBytes?.data == bytes)
+        #expect(model.filePreview == nil)
+    }
+
     @Test("Visibility filters archived and subagent sessions")
     func visibility() {
         let model = AppModel(bridge: MockBridgeService())

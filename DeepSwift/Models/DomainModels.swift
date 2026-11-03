@@ -260,6 +260,82 @@ struct WorkspaceFileText: Codable, Hashable, Sendable {
     let eof: Bool?
 }
 
+struct WorkspaceFileBytes: Codable, Hashable, Sendable {
+    let absolutePath: String
+    let version: String?
+    let bytes: Int?
+    let offset: Int?
+    let eof: Bool?
+    let dataBase64: String
+
+    var data: Data? { Data(base64Encoded: dataBase64) }
+}
+
+enum WorkspacePreviewKind: String, Sendable {
+    case image
+    case pdf
+    case unsupported
+}
+
+struct WorkspaceChangedFile: Codable, Identifiable, Hashable, Sendable {
+    let path: String
+    let display: String
+    let added: Int
+    let deleted: Int
+    let binary: Bool?
+    let oversized: Bool?
+
+    var id: String { path }
+}
+
+struct WorkspaceChangesSummary: Codable, Hashable, Sendable {
+    let turn: Int
+    let cwd: String?
+    let files: [WorkspaceChangedFile]
+    let total: Int
+    let added: Int
+    let deleted: Int
+}
+
+struct WorkspaceDiffHunk: Codable, Hashable, Sendable {
+    let oldStart: Int
+    let oldLines: Int
+    let newStart: Int
+    let newLines: Int
+    let lines: [String]
+}
+
+struct WorkspaceFileDiff: Codable, Hashable, Sendable {
+    let kind: String
+    let path: String
+    let display: String
+    let before: Bool?
+    let after: Bool?
+    let hunks: [WorkspaceDiffHunk]?
+    let coarse: Bool?
+}
+
+struct TerminalShellInfo: Codable, Hashable, Sendable {
+    let path: String
+    let args: [String]?
+    let name: String?
+}
+
+struct TerminalSessionInfo: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let title: String?
+    let shell: TerminalShellInfo?
+    let cwd: String?
+    let cols: Int?
+    let rows: Int?
+    let state: String?
+    let exitCode: Int?
+    let error: String?
+
+    var displayTitle: String { title?.isEmpty == false ? title! : "Terminal" }
+    var isRunning: Bool { state == "running" }
+}
+
 struct ComposerAttachment: Identifiable, Hashable, Sendable {
     let id: String
     let name: String

@@ -279,11 +279,39 @@ struct InspectorView: View {
 
     private var terminalSection: some View {
         Section("Terminal") {
-            Label("Terminal integration is not available in this build.", systemImage: "terminal")
-                .foregroundStyle(.secondary)
-            Text("DeepSwift does not start a separate shell outside the DSH runtime. The official terminal controller can be wired in a later phase.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if let terminal = model.terminals.first(where: { $0.id == model.selectedTerminalID }) {
+                LabeledContent("Shell") {
+                    Text(terminal.shell?.name ?? terminal.shell?.path ?? "Default")
+                        .multilineTextAlignment(.trailing)
+                }
+                LabeledContent("State", value: terminal.state?.capitalized ?? "Unknown")
+                if let cwd = terminal.cwd {
+                    LabeledContent("Directory") {
+                        Text((cwd as NSString).abbreviatingWithTildeInPath)
+                            .font(.caption)
+                            .multilineTextAlignment(.trailing)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help(cwd)
+                    }
+                }
+                Button {
+                    model.showTerminal = true
+                } label: {
+                    Label("Open Terminal", systemImage: "terminal")
+                }
+                .buttonStyle(.borderless)
+            } else {
+                Text("No terminal open in this session.")
+                    .foregroundStyle(.secondary)
+                Button {
+                    model.showTerminal = true
+                } label: {
+                    Label("Open Terminal", systemImage: "terminal")
+                }
+                .buttonStyle(.borderless)
+                .disabled(model.selectedSessionID == nil)
+            }
         }
     }
 

@@ -4,6 +4,7 @@
 //
 
 import AppKit
+import PDFKit
 import SwiftUI
 
 /// Native workspace browser backed by the official `workspaceFiles` Remote.
@@ -185,13 +186,50 @@ struct WorkspaceBrowserView: View {
                             .background(.quaternary.opacity(0.3))
                     }
                 }
+            } else if let bytes = model.filePreviewBytes, let data = bytes.data,
+                      let kind = model.filePreviewKind {
+                VStack(spacing: 0) {
+                    HStack(spacing: 8) {
+                        Image(systemName: kind == .pdf ? "doc.richtext" : "photo")
+                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(URL(fileURLWithPath: bytes.absolutePath).lastPathComponent)
+                                .font(.headline)
+                            Text(bytes.absolutePath)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .textSelection(.enabled)
+                        }
+                        Spacer()
+                        if let size = bytes.bytes {
+                            Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Button {
+                            NSWorkspace.shared.open(URL(fileURLWithPath: bytes.absolutePath))
+                        } label: {
+                            Label("Open Externally", systemImage: "arrow.up.forward.app")
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                    .padding(12)
+                    Divider()
+                    if kind == .image {
+                        ZoomableImagePreview(data: data)
+                    } else {
+                        PDFPreview(data: data)
+                    }
+                }
             } else if let error = model.filePreviewError {
                 ContentUnavailableView("Preview Unavailable", systemImage: "doc.questionmark", description: Text(error))
             } else {
                 ContentUnavailableView(
                     "Select a File",
                     systemImage: "doc.text",
-                    description: Text("Double-click a file to preview it. Image and PDF previews are not available in this build.")
+                    description: Text("Double-click a file to preview text, source, images, or PDFs. Other binary files open externally.")
                 )
             }
         }
@@ -240,4 +278,58 @@ struct WorkspaceBrowserView: View {
         default: return "doc"
         }
     }
+
+// MARK: - Native media previews
+
+private struct ZoomableImagePreview: NSViewRepresentable {
+    let data: Data
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.allowsMagnification = true
+        scrollView.minMagnification = 0.1
+        scrollView.maxMagnification = 8
+        scrollView.backgroundColor = .textBackgroundColor
+
+        let imageView = NSImageView()
+        imageView.image = NSImage(data: data)
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.frame = NSRect(origin: .zero, size: imageView.image?.size ?? NSSize(width: 640, height: 480))
+        scrollView.documentView = imageView
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let imageView = scrollView.documentView as? NSImageView else { return }
+        let image = NSImage(data: data)
+        if imageView.image !== image {
+            imageView.image = image
+            imageView.frame = NSRect(origin: .zero, size: image?.size ?? NSSize(width: 640, height: 480))
+        }
+    }
+}
+
+private struct PDFPreview: NSViewRepresentable {
+    let data: Data
+
+    func makeNSView(context: Context) -> PDFView {
+        let view = PDFView()
+        view.autoScales = true
+        view.displayMode = .singlePageContinuous
+        view.displayDirection = .vertical
+        view.backgroundColor = .textBackgroundColor
+        view.document = PDFDocument(data: data)
+        return view
+    }
+
+    func updateNSView(_ view: PDFView, context: Context) {
+        if view.document == nil {
+            view.document = PDFDocument(data: data)
+        }
+        view.autoScales = true
+    }
+}
 }

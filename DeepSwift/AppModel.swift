@@ -81,6 +81,7 @@ final class AppModel {
     var diagnosticLog = ""
     var showInspector = false
     var showFiles = false
+    var showTerminal = false
     var showSearch = false
     var searchQuery = ""
     var searchResults: [SessionSearchHit] = []
@@ -88,10 +89,24 @@ final class AppModel {
     var filesPath = ""
     var fileListing: WorkspaceDirectoryListing?
     var filePreview: WorkspaceFileText?
+    var filePreviewBytes: WorkspaceFileBytes?
+    var filePreviewKind: WorkspacePreviewKind?
     var filePreviewPath: String?
     var filePreviewError: String?
     var isLoadingFiles = false
     var jobs: [BackgroundJob] = []
+    var terminals: [TerminalSessionInfo] = []
+    var selectedTerminalID: String?
+    var terminalSnapshot: String?
+    var terminalOutput = ""
+    var terminalRevision = 0
+    var terminalWritable = false
+    var terminalLoading = false
+    var terminalError: String?
+    var changesSummary: WorkspaceChangesSummary?
+    var changesLoading = false
+    var changesError: String?
+    var showChanges = false
     var lastRuntimeError: String?
 
     private let bridge: any DSHBridgeService
@@ -101,6 +116,11 @@ final class AppModel {
     private var followGeneration = 0
     private var followStreamID: String?
     private var jobsStreamID: String?
+    private var terminalStreamID: String?
+    private var terminalInputSequence = 0
+    private var terminalLastSize: String?
+    private var changesSequence: Int?
+    private var changesSessionID: String?
     private var eventStreamsOpened = false
     private var didBootstrap = false
     private var lastConnectedClientID: String?
@@ -295,6 +315,7 @@ final class AppModel {
     }
 
     func shutdown() async {
+        detachTerminal(clearList: true)
         notificationTask?.cancel()
         refreshTask?.cancel()
         accountPollTask?.cancel()
@@ -370,8 +391,14 @@ final class AppModel {
         case "stream.error":
             handleStreamError(notification.data)
         case "stream.end":
-            if let id = notification.data["id"]?.stringValue, id == followStreamID {
-                isLoadingConversation = false
+            if let id = notification.data["id"]?.stringValue {
+                if id == followStreamID {
+                    isLoadingConversation = false
+                } else if id == terminalStreamID {
+                    terminalStreamID = nil
+                    terminalWritable = false
+                    terminalLoading = false
+                }
             }
         case "host.event":
             handleHostEvent(name: notification.data["event"]?.stringValue ?? "", args: notification.data["args"]?.arrayValue ?? [])
@@ -441,6 +468,8 @@ final class AppModel {
             if let jobs = value["jobs"]?.arrayValue {
                 self.jobs = jobs.compactMap { try? $0.decode(BackgroundJob.self) }
             }
+        case let streamID where streamID == terminalStreamID:
+            handleTerminalFrame(value)
         default:
             break
         }
@@ -453,6 +482,10 @@ final class AppModel {
             diagnosticLog = "Session stream reset: \(data["reason"]?.stringValue ?? "carrier reset")"
         } else if id == jobsStreamID {
             jobs = []
+        } else if id == terminalStreamID {
+            terminalError = "The terminal stream was interrupted. Reconnect to continue."
+            terminalWritable = false
+            terminalLoading = false
         } else if id == "workspaces" {
             workspaces = []
         }
@@ -461,7 +494,11 @@ final class AppModel {
     private func handleStreamError(_ data: JSONValue) {
         guard let id = data["id"]?.stringValue else { return }
         let message = data["message"]?.stringValue ?? "Remote stream failed."
-        if id == followStreamID {
+        if id == terminalStreamID {
+            terminalError = message
+            terminalWritable = false
+            terminalLoading = false
+        } else if id == followStreamID {
             isLoadingConversation = false
             errorMessage = message
         } else if id == jobsStreamID {
@@ -566,6 +603,7 @@ final class AppModel {
     private func applyFollowFrame(_ frame: JSONValue) {
         switch frame["type"]?.stringValue {
         case "snapshot":
+            captureWorkspaceChange(fromSnapshot: frame)
             conversation.apply(snapshot: frame)
             isLoadingConversation = false
             logger.info("Conversation snapshot: \(self.conversation.items.count, privacy: .public) items, more=\(self.conversation.hasMore, privacy: .public)")
@@ -575,6 +613,7 @@ final class AppModel {
             }
         case "event":
             guard let eventValue = frame["event"], let event = SessionWireEvent(value: eventValue) else { return }
+            captureWorkspaceChange(seq: event.seq, event: event)
             conversation.apply(event: event)
             if event.type == "user/message" {
                 settlePendingPrompt(source: event.data["message"]?["source"] ?? event.data["source"])
@@ -1162,6 +1201,12 @@ final class AppModel {
         let previousJobs = jobsStreamID
         selectedSessionID = id
         conversationSessionID = id
+        detachTerminal(clearList: true)
+        changesSummary = nil
+        changesError = nil
+        changesLoading = false
+        changesSequence = nil
+        changesSessionID = nil
         conversation.reset()
         pendingPrompts = []
         attachments = []
@@ -1170,6 +1215,8 @@ final class AppModel {
         filesPath = ""
         fileListing = nil
         filePreview = nil
+        filePreviewBytes = nil
+        filePreviewKind = nil
         filePreviewPath = nil
         filePreviewError = nil
         UserDefaults.standard.set(id, forKey: "selectedSessionID")
@@ -1615,6 +1662,297 @@ final class AppModel {
         }
     }
 
+    // MARK: - Terminal
+
+    func prepareTerminal() async {
+        guard selectedSessionID != nil else { return }
+        terminalError = nil
+        await refreshTerminals()
+        if terminals.isEmpty {
+            await createTerminal()
+        } else if let selectedTerminalID, terminals.contains(where: { $0.id == selectedTerminalID }) {
+            await attachTerminal(selectedTerminalID)
+        } else if let first = terminals.first {
+            selectedTerminalID = first.id
+            await attachTerminal(first.id)
+        }
+    }
+
+    func refreshTerminals() async {
+        guard let sessionID = selectedSessionID else { return }
+        do {
+            let result = try await bridge.request("host.call", params: .object([
+                "namespace": .string("terminal"),
+                "method": .string("list"),
+                "args": .object(["sessionId": .string(sessionID)])
+            ]), timeout: .seconds(15))
+            terminals = (result.arrayValue ?? []).compactMap { try? $0.decode(TerminalSessionInfo.self) }
+            if let selectedTerminalID, !terminals.contains(where: { $0.id == selectedTerminalID }) {
+                self.selectedTerminalID = terminals.first?.id
+            }
+        } catch {
+            terminalError = "Could not list terminals: \(error.localizedDescription)"
+        }
+    }
+
+    func createTerminal() async {
+        guard let sessionID = selectedSessionID else { return }
+        terminalLoading = true
+        terminalError = nil
+        do {
+            let id = UUID().uuidString.lowercased()
+            let result = try await bridge.request("host.call", params: .object([
+                "namespace": .string("terminal"),
+                "method": .string("create"),
+                "args": .object([
+                    "agentId": .string(sessionID),
+                    "request": .object([
+                        "id": .string(id),
+                        "cols": .number(80),
+                        "rows": .number(24)
+                    ])
+                ])
+            ]), timeout: .seconds(30))
+            let info = try result.decode(TerminalSessionInfo.self)
+            terminals.removeAll { $0.id == info.id }
+            terminals.append(info)
+            selectedTerminalID = info.id
+            await attachTerminal(info.id)
+        } catch {
+            terminalLoading = false
+            terminalError = "Could not create a terminal: \(error.localizedDescription)"
+        }
+    }
+
+    func selectTerminal(_ id: String?) async {
+        guard let id, id != selectedTerminalID || terminalStreamID == nil else { return }
+        selectedTerminalID = id
+        await attachTerminal(id)
+    }
+
+    func attachTerminal(_ id: String) async {
+        guard let sessionID = selectedSessionID else { return }
+        detachTerminalStream()
+        selectedTerminalID = id
+        terminalLoading = true
+        terminalError = nil
+        terminalSnapshot = nil
+        terminalOutput = ""
+        terminalWritable = false
+        terminalInputSequence = 0
+        terminalLastSize = nil
+        terminalRevision &+= 1
+        let streamID = "terminal-\(UUID().uuidString.lowercased())"
+        terminalStreamID = streamID
+        do {
+            _ = try await bridge.request("stream.open", params: .object([
+                "id": .string(streamID),
+                "endpoint": .string("terminal/attach"),
+                "args": .object([
+                    "agentId": .string(sessionID),
+                    "id": .string(id)
+                ])
+            ]))
+        } catch {
+            terminalLoading = false
+            terminalStreamID = nil
+            terminalError = "Could not attach the terminal: \(error.localizedDescription)"
+        }
+    }
+
+    func detachTerminal(clearList: Bool = false) {
+        detachTerminalStream()
+        terminalSnapshot = nil
+        terminalOutput = ""
+        terminalWritable = false
+        terminalLoading = false
+        terminalRevision &+= 1
+        if clearList {
+            terminals = []
+            selectedTerminalID = nil
+            terminalError = nil
+        }
+    }
+
+    private func detachTerminalStream() {
+        guard let streamID = terminalStreamID else { return }
+        terminalStreamID = nil
+        Task { [bridge] in
+            _ = try? await bridge.request("stream.close", params: .object(["id": .string(streamID)]))
+        }
+    }
+
+    func closeSelectedTerminal() async {
+        guard let sessionID = selectedSessionID, let id = selectedTerminalID else { return }
+        detachTerminalStream()
+        do {
+            _ = try await bridge.request("host.call", params: .object([
+                "namespace": .string("terminal"),
+                "method": .string("close"),
+                "args": .object([
+                    "agentId": .string(sessionID),
+                    "id": .string(id)
+                ])
+            ]), timeout: .seconds(20))
+        } catch {
+            terminalError = "Could not close the terminal: \(error.localizedDescription)"
+        }
+        terminals.removeAll { $0.id == id }
+        selectedTerminalID = terminals.first?.id
+        terminalSnapshot = nil
+        terminalOutput = ""
+        terminalWritable = false
+        terminalLoading = false
+        terminalRevision &+= 1
+        if let next = selectedTerminalID {
+            await attachTerminal(next)
+        }
+    }
+
+    func sendTerminalInput(_ bytes: [UInt8]) {
+        guard terminalWritable, let streamID = terminalStreamID, !bytes.isEmpty else { return }
+        let data = String(decoding: bytes, as: UTF8.self)
+        terminalInputSequence += 1
+        let sequence = terminalInputSequence
+        Task { [bridge] in
+            do {
+                _ = try await bridge.request("stream.send", params: .object([
+                    "id": .string(streamID),
+                    "value": .object([
+                        "type": .string("write"),
+                        "sequence": .number(Double(sequence)),
+                        "data": .string(data)
+                    ])
+                ]))
+            } catch {
+                self.terminalError = "Terminal input failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func resizeTerminal(cols: Int, rows: Int) {
+        guard terminalWritable, let streamID = terminalStreamID else { return }
+        let clampedCols = min(max(cols, 2), 500)
+        let clampedRows = min(max(rows, 1), 200)
+        let size = "\(clampedCols)x\(clampedRows)"
+        guard size != terminalLastSize else { return }
+        terminalLastSize = size
+        terminalInputSequence += 1
+        let sequence = terminalInputSequence
+        Task { [bridge] in
+            do {
+                _ = try await bridge.request("stream.send", params: .object([
+                    "id": .string(streamID),
+                    "value": .object([
+                        "type": .string("resize"),
+                        "sequence": .number(Double(sequence)),
+                        "cols": .number(Double(clampedCols)),
+                        "rows": .number(Double(clampedRows))
+                    ])
+                ]))
+            } catch {
+                self.terminalError = "Terminal resize failed: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func handleTerminalFrame(_ value: JSONValue) {
+        switch value["type"]?.stringValue {
+        case "snapshot":
+            terminalLoading = false
+            terminalSnapshot = value["screen"]?.stringValue ?? ""
+            terminalOutput = ""
+            terminalWritable = value["writable"]?.boolValue == true
+            if let info = try? value["info"]?.decode(TerminalSessionInfo.self) {
+                updateTerminal(info)
+            }
+            terminalRevision &+= 1
+        case "output":
+            let data = value["data"]?.stringValue ?? ""
+            if !data.isEmpty {
+                terminalOutput += data
+                terminalRevision &+= 1
+            }
+        case "state":
+            terminalWritable = value["writable"]?.boolValue == true
+            if let info = try? value["info"]?.decode(TerminalSessionInfo.self) {
+                updateTerminal(info)
+            }
+            terminalLoading = false
+            terminalRevision &+= 1
+        case "ack":
+            if let refusal = value["refusal"]?.stringValue {
+                terminalError = refusal == "read-only" ? "This terminal is read-only." : "The terminal process is not running."
+            }
+        default:
+            break
+        }
+    }
+
+    // MARK: - Workspace changes
+
+    func loadChangesSummary(seq: Int, sessionID: String) async {
+        guard selectedSessionID == sessionID else { return }
+        changesLoading = true
+        defer { changesLoading = false }
+        do {
+            let result = try await bridge.request("workspace.changesSummary", params: .object([
+                "sessionId": .string(sessionID),
+                "seq": .number(Double(seq))
+            ]), timeout: .seconds(20))
+            guard selectedSessionID == sessionID, changesSequence == seq else { return }
+            changesSummary = try result.decode(WorkspaceChangesSummary.self)
+            changesError = nil
+        } catch {
+            guard selectedSessionID == sessionID, changesSequence == seq else { return }
+            changesSummary = nil
+            changesError = "Changed files are not available for this turn. \(error.localizedDescription)"
+        }
+    }
+
+    func loadChangesDiff(index: Int) async throws -> WorkspaceFileDiff {
+        guard let sessionID = selectedSessionID, let seq = changesSequence else {
+            throw BridgeClientError.protocolViolation("No changed-file summary is selected.")
+        }
+        let result = try await bridge.request("workspace.changesDiff", params: .object([
+            "sessionId": .string(sessionID),
+            "seq": .number(Double(seq)),
+            "index": .number(Double(index))
+        ]), timeout: .seconds(30))
+        return try result.decode(WorkspaceFileDiff.self)
+    }
+
+    private func captureWorkspaceChange(seq: Int, event: SessionWireEvent) {
+        guard event.type == "workspace/changes", let sessionID = selectedSessionID,
+              let turn = event.data["turn"]?.intValue else { return }
+        if changesSessionID == sessionID, let current = changesSequence, current >= seq { return }
+        changesSessionID = sessionID
+        changesSequence = seq
+        changesSummary = nil
+        changesError = nil
+        Task { [weak self] in
+            await self?.loadChangesSummary(seq: seq, sessionID: sessionID)
+        }
+    }
+
+    private func captureWorkspaceChange(fromSnapshot frame: JSONValue) {
+        guard let records = frame["records"]?.arrayValue else { return }
+        for record in records.reversed() {
+            guard let eventValue = record["event"], let event = SessionWireEvent(value: eventValue),
+                  event.type == "workspace/changes" else { continue }
+            captureWorkspaceChange(seq: event.seq, event: event)
+            return
+        }
+    }
+
+    private func updateTerminal(_ info: TerminalSessionInfo) {
+        if let index = terminals.firstIndex(where: { $0.id == info.id }) {
+            terminals[index] = info
+        } else {
+            terminals.append(info)
+        }
+    }
+
     func loadFiles(path: String = "") async {
         guard let sessionID = selectedSessionID, !isLoadingFiles else { return }
         isLoadingFiles = true
@@ -1639,6 +1977,16 @@ final class AppModel {
         guard let sessionID = selectedSessionID else { return }
         let path = filesPath.isEmpty ? entry.name : "\(filesPath)/\(entry.name)"
         filePreviewError = nil
+        filePreview = nil
+        filePreviewBytes = nil
+        filePreviewKind = nil
+        filePreviewPath = path
+
+        if let kind = Self.bytePreviewKind(for: path) {
+            await loadFileBytes(path: path, kind: kind, sessionID: sessionID)
+            return
+        }
+
         do {
             let result = try await bridge.request("host.call", params: .object([
                 "namespace": .string("workspaceFiles"),
@@ -1650,11 +1998,39 @@ final class AppModel {
                 ])
             ]), timeout: .seconds(20))
             filePreview = try result.decode(WorkspaceFileText.self)
-            filePreviewPath = path
         } catch {
             filePreview = nil
-            filePreviewPath = path
             filePreviewError = "This file cannot be shown as text. \(error.localizedDescription)"
+        }
+    }
+
+    private func loadFileBytes(path: String, kind: WorkspacePreviewKind, sessionID: String) async {
+        do {
+            let result = try await bridge.request("workspace.readBytes", params: .object([
+                "sessionId": .string(sessionID),
+                "path": .string(path)
+            ]), timeout: .seconds(30))
+            let bytes = try result.decode(WorkspaceFileBytes.self)
+            guard bytes.data != nil else {
+                throw BridgeClientError.protocolViolation("The Host returned no file bytes.")
+            }
+            filePreviewBytes = bytes
+            filePreviewKind = kind
+        } catch {
+            filePreviewBytes = nil
+            filePreviewKind = nil
+            filePreviewError = "This file could not be previewed. \(error.localizedDescription)"
+        }
+    }
+
+    static func bytePreviewKind(for path: String) -> WorkspacePreviewKind? {
+        switch URL(fileURLWithPath: path).pathExtension.lowercased() {
+        case "png", "jpg", "jpeg", "gif", "webp", "heic", "bmp", "tiff", "tif":
+            return .image
+        case "pdf":
+            return .pdf
+        default:
+            return nil
         }
     }
 

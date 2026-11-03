@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 
@@ -165,6 +165,22 @@ test('provider settings and redacted credentials survive an isolated Host restar
     await bridge.request('host.call', {
       namespace: 'credentials', method: 'unset', args: { ref: reference },
     })
+
+    const workspacePath = mkdtempSync(join(testRoot, 'workspace-'))
+    writeFileSync(join(workspacePath, 'hello.txt'), 'hello from the isolated workspace')
+    const workspace = await bridge.request('host.call', {
+      namespace: 'workspace', method: 'create', args: { request: { path: workspacePath } },
+    })
+    const session = await bridge.request('host.call', {
+      namespace: 'session', method: 'create', args: { request: { workspaceId: workspace.workspace.workspaceId } },
+    })
+    const bytes = await bridge.request('workspace.readBytes', {
+      sessionId: session.sessionId,
+      path: 'hello.txt',
+    })
+    assert.equal(bytes.absolutePath, join(workspacePath, 'hello.txt'))
+    assert.equal(bytes.eof, true)
+    assert.equal(Buffer.from(bytes.dataBase64, 'base64').toString('utf8'), 'hello from the isolated workspace')
 
     await bridge.request('shutdown')
     await wait(500)

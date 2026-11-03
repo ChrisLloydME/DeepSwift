@@ -53,6 +53,111 @@ export class HostConnection extends EventEmitter {
 
   /** Call one unary Remote endpoint. */
   async rpc(namespace, method, args = {}, { timeoutMs = DEFAULT_RPC_TIMEOUT_MS } = {}) {
+    const { response, rpcId } = await this.#post(namespace, method, args, timeoutMs)
+    const text = await response.text()
+    let envelope
+    try {
+      envelope = JSON.parse(text)
+    } catch {
+      throw new BridgeError('connection/protocol', 'Host response is not JSON', { endpoint: `${namespace}/${method}`, body: text.slice(0, 300) })
+    }
+    if (envelope?.type !== 'server-response' || envelope.rpcId !== rpcId || typeof envelope.result !== 'object') {
+      throw new BridgeError('connection/protocol', 'Host response envelope is invalid', { endpoint: `${namespace}/${method}` })
+    }
+    if (envelope.result.ok !== true) {
+      const error = envelope.result.error ?? {}
+      throw new BridgeError(`host/${error.code ?? 'unknown'}`, error.message ?? 'Host call failed', {
+        endpoint: `${namespace}/${method}`,
+        ...(typeof error.details === 'object' && error.details !== null ? { details: error.details } : {}),
+      })
+    }
+    return envelope.result.value
+  }
+
+  /** Call a unary Remote endpoint that may carry native bytes in a multipart response. */
+  async rpcBinary(namespace, method, args = {}, { timeoutMs = DEFAULT_RPC_TIMEOUT_MS } = {}) {
+    const { response, rpcId } = await this.#post(namespace, method, args, timeoutMs)
+    const contentType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()
+    if (contentType !== 'multipart/form-data') {
+      const text = await response.text()
+      throw new BridgeError('connection/protocol', 'Host byte response is not multipart', { endpoint: `${namespace}/${method}`, body: text.slice(0, 300) })
+    }
+    let form
+    try {
+      form = await response.formData()
+    } catch (error) {
+      throw new BridgeError('connection/protocol', 'Host multipart response is invalid', {
+        endpoint: `${namespace}/${method}`,
+        cause: error instanceof Error ? error.message : String(error),
+      })
+    }
+    const fields = new Map()
+    for (const [name, value] of form) {
+      if (fields.has(name)) throw new BridgeError('connection/protocol', 'Host multipart response repeats a field', { endpoint: `${namespace}/${method}` })
+      fields.set(name, value)
+    }
+    const metadata = fields.get('metadata')
+    fields.delete('metadata')
+    if (typeof metadata !== 'string') {
+      throw new BridgeError('connection/protocol', 'Host multipart response has no metadata', { endpoint: `${namespace}/${method}` })
+    }
+    let envelope
+    try {
+      envelope = JSON.parse(metadata)
+    } catch {
+      throw new BridgeError('connection/protocol', 'Host multipart metadata is not JSON', { endpoint: `${namespace}/${method}` })
+    }
+    if (envelope?.type !== 'server-response' || envelope.rpcId !== rpcId || typeof envelope.result !== 'object') {
+      throw new BridgeError('connection/protocol', 'Host multipart envelope is invalid', { endpoint: `${namespace}/${method}` })
+    }
+    if (envelope.result.ok !== true) {
+      const error = envelope.result.error ?? {}
+      throw new BridgeError(`host/${error.code ?? 'unknown'}`, error.message ?? 'Host call failed', {
+        endpoint: `${namespace}/${method}`,
+        ...(typeof error.details === 'object' && error.details !== null ? { details: error.details } : {}),
+      })
+    }
+    if (!Array.isArray(envelope.attachments) || envelope.attachments.length === 0) {
+      throw new BridgeError('connection/protocol', 'Host multipart response has no attachments', { endpoint: `${namespace}/${method}` })
+    }
+    const root = { value: envelope.result.value }
+    for (const attachment of envelope.attachments) {
+      if (typeof attachment !== 'object' || attachment === null || attachment.codec !== 'bytes'
+          || typeof attachment.part !== 'string' || !Array.isArray(attachment.path)) {
+        throw new BridgeError('connection/protocol', 'Host multipart attachment is invalid', { endpoint: `${namespace}/${method}` })
+      }
+      const part = fields.get(attachment.part)
+      fields.delete(attachment.part)
+      if (part === undefined || typeof part.arrayBuffer !== 'function') {
+        throw new BridgeError('connection/protocol', 'Host multipart attachment is missing', { endpoint: `${namespace}/${method}` })
+      }
+      let parent = root
+      let key = 'value'
+      for (const segment of attachment.path) {
+        const value = Reflect.get(parent, key)
+        if (typeof value !== 'object' || value === null) throw new BridgeError('connection/protocol', 'Host multipart path is invalid', { endpoint: `${namespace}/${method}` })
+        if (Array.isArray(value)) {
+          if (!Number.isSafeInteger(segment) || segment < 0 || segment >= value.length) throw new BridgeError('connection/protocol', 'Host multipart path is invalid', { endpoint: `${namespace}/${method}` })
+        } else if (typeof segment !== 'string') {
+          throw new BridgeError('connection/protocol', 'Host multipart path is invalid', { endpoint: `${namespace}/${method}` })
+        }
+        if (!Object.hasOwn(value, segment)) throw new BridgeError('connection/protocol', 'Host multipart path is invalid', { endpoint: `${namespace}/${method}` })
+        parent = value
+        key = segment
+      }
+      if (Reflect.get(parent, key) !== null) throw new BridgeError('connection/protocol', 'Host multipart placeholder is invalid', { endpoint: `${namespace}/${method}` })
+      Object.defineProperty(parent, key, {
+        value: new Uint8Array(await part.arrayBuffer()),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      })
+    }
+    if (fields.size !== 0) throw new BridgeError('connection/protocol', 'Host multipart response has unexpected fields', { endpoint: `${namespace}/${method}` })
+    return root.value
+  }
+
+  async #post(namespace, method, args, timeoutMs) {
     if (this.#cookie === undefined) throw new BridgeError('connection/not-authenticated', 'Authenticate before calling the Host')
     const endpoint = `${namespace}/${method}`
     const rpcId = randomUUID()
@@ -68,27 +173,40 @@ export class HostConnection extends EventEmitter {
     } catch (error) {
       throw new BridgeError('connection/transport', error instanceof Error ? error.message : String(error), { endpoint })
     }
-    const text = await response.text()
     if (!response.ok) {
+      const text = await response.text()
       throw new BridgeError('connection/http', `Host answered HTTP ${response.status}`, { endpoint, body: text.slice(0, 500) })
     }
-    let envelope
+    return { response, rpcId }
+  }
+
+  /** Read one authenticated Host HTTP JSON endpoint outside the Remote RPC namespace. */
+  async getJSON(path, params = {}, { timeoutMs = DEFAULT_RPC_TIMEOUT_MS } = {}) {
+    if (this.#cookie === undefined) throw new BridgeError('connection/not-authenticated', 'Authenticate before calling the Host')
+    const url = new URL(path, this.#baseUrl)
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null) url.searchParams.set(key, String(value))
+    }
+    let response
     try {
-      envelope = JSON.parse(text)
-    } catch {
-      throw new BridgeError('connection/protocol', 'Host response is not JSON', { endpoint, body: text.slice(0, 300) })
-    }
-    if (envelope?.type !== 'server-response' || envelope.rpcId !== rpcId || typeof envelope.result !== 'object') {
-      throw new BridgeError('connection/protocol', 'Host response envelope is invalid', { endpoint })
-    }
-    if (envelope.result.ok !== true) {
-      const error = envelope.result.error ?? {}
-      throw new BridgeError(`host/${error.code ?? 'unknown'}`, error.message ?? 'Host call failed', {
-        endpoint,
-        ...(typeof error.details === 'object' && error.details !== null ? { details: error.details } : {}),
+      response = await fetch(url, {
+        method: 'GET',
+        headers: { accept: 'application/json', cookie: this.#cookie },
+        signal: AbortSignal.timeout(timeoutMs),
       })
+    } catch (error) {
+      throw new BridgeError('connection/transport', error instanceof Error ? error.message : String(error), { endpoint: path })
     }
-    return envelope.result.value
+    const text = await response.text()
+    if (!response.ok) {
+      const code = response.status === 404 ? 'host/not-found' : response.status === 409 ? 'host/unavailable' : 'connection/http'
+      throw new BridgeError(code, `Host answered HTTP ${response.status}`, { endpoint: path, body: text.slice(0, 500) })
+    }
+    try {
+      return JSON.parse(text)
+    } catch {
+      throw new BridgeError('connection/protocol', 'Host endpoint did not answer with JSON', { endpoint: path })
+    }
   }
 
   /** Open the multiplexed Remote stream socket. */
