@@ -153,14 +153,6 @@ private struct ChatHeader: View {
             if let models = model.models, !models.isEmpty {
                 ModelMenu(catalog: models)
             }
-
-            Button {
-                model.showInspector.toggle()
-            } label: {
-                Image(systemName: "sidebar.trailing")
-            }
-            .buttonStyle(.borderless)
-            .help("Toggle Inspector")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 10)

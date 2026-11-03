@@ -26,13 +26,16 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(nsColor: .textBackgroundColor))
+            // Attach the inspector to the detail column, not to the
+            // NavigationSplitView. The detail column owns the trailing
+            // presentation; the split view owns only the leading sidebar.
+            .inspector(isPresented: $model.showInspector) {
+                InspectorView()
+                    .inspectorColumnWidth(min: 260, ideal: 320, max: 460)
+            }
         }
         .navigationSplitViewStyle(.balanced)
         .preferredColorScheme(appearance == "light" ? .light : appearance == "dark" ? .dark : nil)
-        .inspector(isPresented: $model.showInspector) {
-            InspectorView()
-                .inspectorColumnWidth(min: 250, ideal: 300, max: 420)
-        }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
