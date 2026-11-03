@@ -296,6 +296,27 @@ struct AppModelTests {
         #expect(model.filePreview?.text == "# Readme")
     }
 
+    @Test("Permission presets switch through the official command")
+    func permissionPresetSwitch() async throws {
+        let bridge = MockBridgeService { method, params in
+            if method == "host.call", params["method"]?.stringValue == "execute" {
+                return .object(["ok": .bool(true)])
+            }
+            return .object([:])
+        }
+        let model = AppModel(bridge: bridge)
+        model.selectedSessionID = "session-1"
+
+        await model.setPermissionPreset("danger-full-access")
+
+        let requests = await bridge.recordedRequests()
+        let execute = try #require(requests.first { $0.method == "host.call" && $0.params["method"]?.stringValue == "execute" })
+        #expect(execute.params["namespace"]?.stringValue == "commands")
+        #expect(execute.params["args"]?["agentId"]?.stringValue == "session-1")
+        #expect(execute.params["args"]?["line"]?.stringValue == "/permission danger-full-access")
+        #expect(model.errorMessage == nil)
+    }
+
     @Test("Image previews use the Host binary endpoint")
     func imagePreviewRequests() async throws {
         let bytes = Data([0x89, 0x50, 0x4E, 0x47])

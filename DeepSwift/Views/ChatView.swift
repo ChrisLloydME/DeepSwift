@@ -157,6 +157,8 @@ private struct ChatHeader: View {
                 .background(.quaternary.opacity(0.5), in: Capsule())
             }
 
+            PermissionPresetMenu()
+
             if let models = model.models, !models.isEmpty {
                 if let selection = model.conversation.modelSelection, !models.contains(selection) {
                     Label("Selected model unavailable", systemImage: "exclamationmark.triangle")

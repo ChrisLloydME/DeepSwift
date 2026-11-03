@@ -70,7 +70,7 @@ struct InspectorView: View {
             }
 
             LabeledContent("Permission") {
-                Text(model.conversation.permissionPreset ?? "Default")
+                PermissionPresetMenu(compact: true)
             }
 
             LabeledContent("Identifier") {

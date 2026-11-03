@@ -63,6 +63,7 @@ final class AppModel {
     var attachments: [ComposerAttachment] = []
     var searchText = ""
     var models: ModelCatalog?
+    var permissionCatalog: PermissionCatalog?
     var commands: [CommandDescriptor] = []
     var account: AccountView?
     var providerDirectory: [ConfigurableProvider] = []
@@ -305,6 +306,7 @@ final class AppModel {
             await openInitialStreams()
             await refreshSessions()
             await refreshModels()
+            await refreshPermissionCatalog()
             await refreshAccount()
             await refreshProviderSettings()
         } catch {
@@ -711,6 +713,33 @@ final class AppModel {
         // `undefined`/null means the line is not a recognized command; the
         // caller falls back to the ordinary prompt path.
         return result.objectValue != nil
+    }
+
+    func refreshPermissionCatalog() async {
+        guard connectionState.isReady else { return }
+        do {
+            let result = try await bridge.request("host.call", params: .object([
+                "namespace": .string("permissionPresets"),
+                "method": .string("catalog"),
+                "args": .object([:])
+            ]))
+            permissionCatalog = try result.decode(PermissionCatalog.self)
+        } catch {
+            // A deployment may not compose permission presets; hide the control.
+            permissionCatalog = nil
+        }
+    }
+
+    func setPermissionPreset(_ value: String) async {
+        guard let sessionID = selectedSessionID, !value.isEmpty else { return }
+        do {
+            let recognized = try await executeCommand("/permission \(value)", sessionID: sessionID)
+            if !recognized {
+                errorMessage = "The selected permission preset is not available in this session."
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     func refreshModels() async {
@@ -2157,6 +2186,8 @@ final class AppModel {
             }
         case "api-session/activity":
             scheduleSessionRefresh()
+        case "permission-presets/catalog-changed":
+            Task { await refreshPermissionCatalog() }
         case "api-session/error":
             if args.count >= 2 {
                 errorMessage = args[1]["message"]?.stringValue ?? args[1].stringValue ?? "The agent reported an error."

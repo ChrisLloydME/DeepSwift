@@ -277,6 +277,20 @@ enum WorkspacePreviewKind: String, Sendable {
     case unsupported
 }
 
+struct PermissionPresetOption: Codable, Identifiable, Hashable, Sendable {
+    let value: String
+    let name: String
+    let description: String?
+
+    var id: String { value }
+}
+
+struct PermissionCatalog: Codable, Hashable, Sendable {
+    let options: [PermissionPresetOption]
+    let defaultOptions: [PermissionPresetOption]?
+    let defaultPreset: String?
+}
+
 struct WorkspaceChangedFile: Codable, Identifiable, Hashable, Sendable {
     let path: String
     let display: String
