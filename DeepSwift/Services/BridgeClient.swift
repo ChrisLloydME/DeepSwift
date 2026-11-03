@@ -191,7 +191,7 @@ actor BridgeClient: DSHBridgeService {
             handle(line: Data(line))
         }
         // A malformed or non-newline-terminated frame must not grow forever.
-        if stdoutBuffer.count > 16 * 1024 * 1024 {
+        if stdoutBuffer.count > 64 * 1024 * 1024 {
             stdoutBuffer.removeAll(keepingCapacity: false)
             notificationContinuation.yield(BridgeNotification(
                 event: "bridge.malformed",

@@ -168,6 +168,7 @@ struct ComposerView: View {
                         }
                         .buttonStyle(.borderless)
                         .padding(2)
+                        .accessibilityLabel("Remove image \(attachment.name)")
                     }
                     .help(attachment.name)
                 }
@@ -250,6 +251,8 @@ struct ComposerTextView: NSViewRepresentable {
         textView.isContinuousSpellCheckingEnabled = true
         textView.usesFindBar = true
         textView.string = text
+        textView.setAccessibilityLabel("Message")
+        textView.setAccessibilityHelp("Type a message to DeepSeek. Return sends; Shift-Return inserts a newline.")
 
         context.coordinator.textView = textView
         scrollView.documentView = textView

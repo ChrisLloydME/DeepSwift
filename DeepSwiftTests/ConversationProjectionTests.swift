@@ -178,6 +178,30 @@ struct ConversationProjectionTests {
         }
     }
 
+    @Test("A reconnect baseline restores compact streaming chunks")
+    func restoresStreamBaseline() throws {
+        var projection = ConversationProjection()
+        projection.apply(snapshot: .object([
+            "header": .object(["id": .string("s1")]),
+            "cursor": .number(3),
+            "hasMore": .bool(false),
+            "records": .array([]),
+            "assistantStream": .object([
+                "activeAttempt": .object([
+                    "attemptId": .string("attempt-1"),
+                    "turn": .number(1),
+                    "step": .number(1),
+                    "stream": .array([
+                        .object(["type": .string("text-chunks"), "texts": .array([.string("Hel"), .string("lo")])]),
+                        .object(["type": .string("tool-call-chunks"), "id": .string("t1"), "name": .string("read")])
+                    ])
+                ])
+            ])
+        ]))
+        #expect(projection.live?.text == "Hello")
+        #expect(projection.live?.toolNames == ["read"])
+    }
+
     @Test("Snapshot establishes the page cursor and title")
     func appliesSnapshot() throws {
         var projection = ConversationProjection()

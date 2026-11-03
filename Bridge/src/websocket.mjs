@@ -13,7 +13,7 @@ import http from 'node:http'
 import https from 'node:https'
 
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
-const MAX_MESSAGE_BYTES = 32 * 1024 * 1024
+const MAX_MESSAGE_BYTES = 64 * 1024 * 1024
 const PING_INTERVAL_MS = 20_000
 const PONG_DEADLINE_MS = 45_000
 
