@@ -26,13 +26,17 @@ struct RuntimeConfiguration: Sendable {
             .deletingLastPathComponent() // repository root
     }
 
-    static func resolve(defaults: UserDefaults = .standard, environment: [String: String] = ProcessInfo.processInfo.environment) throws -> RuntimeConfiguration {
+    static func resolve(
+        defaults: UserDefaults = .standard,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        bundleResources: URL? = Bundle.main.resourceURL
+    ) throws -> RuntimeConfiguration {
         let fileManager = FileManager.default
         let root = developmentRoot
 
-        let nodePath = try resolveNode(environment: environment, defaults: defaults, fileManager: fileManager)
-        let bridgePath = try resolveBridge(environment: environment, root: root, fileManager: fileManager)
-        let dshBinPath = try resolveDSH(environment: environment, root: root, fileManager: fileManager)
+        let nodePath = try resolveNode(environment: environment, defaults: defaults, fileManager: fileManager, resources: bundleResources)
+        let bridgePath = try resolveBridge(environment: environment, root: root, fileManager: fileManager, resources: bundleResources)
+        let dshBinPath = try resolveDSH(environment: environment, root: root, fileManager: fileManager, resources: bundleResources)
         let installedVersion = packageVersion(for: dshBinPath)
         if installedVersion != expectedDSHVersion, environment["DEEPSWIFT_ALLOW_UNSUPPORTED_DSH"] != "1" {
             throw RuntimeSetupError.unsupportedDSH(installed: installedVersion ?? "unknown", expected: expectedDSHVersion)
@@ -65,30 +69,35 @@ struct RuntimeConfiguration: Sendable {
         )
     }
 
-    private static func resolveNode(environment: [String: String], defaults: UserDefaults, fileManager: FileManager) throws -> String {
+    private static func resolveNode(environment: [String: String], defaults: UserDefaults, fileManager: FileManager, resources: URL?) throws -> String {
         if let explicit = environment["DEEPSWIFT_NODE_BIN"], fileManager.isExecutableFile(atPath: explicit) {
             return explicit
         }
         if let saved = defaults.string(forKey: "nodePathOverride"), fileManager.isExecutableFile(atPath: saved) {
             return saved
         }
-        let candidates = [
+        var candidates: [String] = []
+        if let resources {
+            candidates.append(resources.appendingPathComponent("Node/bin/node").path)
+            candidates.append(resources.appendingPathComponent("Node/node").path)
+        }
+        candidates.append(contentsOf: [
             "/opt/homebrew/bin/node",
             "/usr/local/bin/node",
             "/usr/bin/node",
             (("~/.volta/bin/node") as NSString).expandingTildeInPath,
             (("~/.nvm/current/bin/node") as NSString).expandingTildeInPath
-        ]
+        ])
         for candidate in candidates where fileManager.isExecutableFile(atPath: candidate) {
             return candidate
         }
         throw RuntimeSetupError.missingNode
     }
 
-    private static func resolveBridge(environment: [String: String], root: URL, fileManager: FileManager) throws -> String {
+    private static func resolveBridge(environment: [String: String], root: URL, fileManager: FileManager, resources: URL?) throws -> String {
         var candidates: [String] = []
         if let explicit = environment["DEEPSWIFT_BRIDGE_PATH"] { candidates.append(explicit) }
-        if let resources = Bundle.main.resourceURL {
+        if let resources {
             candidates.append(resources.appendingPathComponent("Bridge/main.mjs").path)
             candidates.append(resources.appendingPathComponent("Bridge/src/main.mjs").path)
         }
@@ -99,10 +108,10 @@ struct RuntimeConfiguration: Sendable {
         throw RuntimeSetupError.missingBridge
     }
 
-    private static func resolveDSH(environment: [String: String], root: URL, fileManager: FileManager) throws -> String {
+    private static func resolveDSH(environment: [String: String], root: URL, fileManager: FileManager, resources: URL?) throws -> String {
         var candidates: [String] = []
         if let explicit = environment["DEEPSWIFT_DSH_BIN"] { candidates.append(explicit) }
-        if let resources = Bundle.main.resourceURL {
+        if let resources {
             candidates.append(resources.appendingPathComponent("DSH/node_modules/@deepseek-ai/dsh/lib/bin.js").path)
             candidates.append(resources.appendingPathComponent("DSH/lib/bin.js").path)
         }

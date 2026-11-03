@@ -49,8 +49,10 @@ npm_config_update_notifier=false
 Every ambient `DSH_*` variable is removed, including `DSH_AGENTS_HOME`; the Host's shared agent instructions and skills therefore stay inside the isolated profile rather than reading the user's `~/.agents`. Provider API keys are passed only
 when the user explicitly enables **Settings › Runtime › Pass provider API key
 environment variables**. In that case only variables matching
-`DEEPSEEK_*`, `OPENAI_*`, or `ANTHROPIC_*` are copied. They are never written to
-disk by DeepSwift.
+`DEEPSEEK_*`, `OPENAI_*`, `ANTHROPIC_*`, or `OPENCODE_*` are copied. They are
+never written to disk by DeepSwift. OpenCode Go's live metadata endpoint is
+public and is not given the credential; inference receives it only through the
+Host's provider auth path.
 
 ## Provider credentials
 
@@ -83,6 +85,38 @@ Nothing in this repository edits `~/.npmrc`, `~/.npm`, a global DSH install, or
 shell startup files.
 
 ## Network and IPC
+
+## Packaged runtime
+
+Debug and development builds use `.local/runtime/bridge` and a Node executable
+found on the host. `Scripts/build-release.sh` builds a Release app and
+`Scripts/package-runtime.sh` copies a self-contained runtime into:
+
+```text
+DeepSwift.app/Contents/Resources/
+├── Node/bin/node
+├── Node/LICENSE
+├── Bridge/src/...
+└── DSH/node_modules/@deepseek-ai/dsh/...
+```
+
+`RuntimeConfiguration` checks the bundled Node path before any host fallback,
+and resolves the Host and bridge from `Contents/Resources`. Production builds
+therefore do not need a globally installed Node.js or DSH.
+
+The packaging script signs the nested Node executable with
+`Scripts/node-entitlements.plist` so V8 can JIT under the hardened runtime. A
+Developer ID identity signs the framework and app. `Scripts/notarize.sh` submits
+the signed zip to Apple's notary service and staples the app; it requires
+`APPLE_ID`, `APPLE_TEAM_ID`, and `APPLE_APP_PASSWORD` in the caller's
+environment.
+
+The checked-in release workflow is intentionally parameterized: this
+repository does not contain a Developer ID certificate, notarization
+credentials, or an update feed. Sparkle is not adopted because there is no
+signed appcast or update signing key; adding it requires those distribution
+assets. The bundled Node is the host architecture; a universal distribution
+must substitute a universal Node build.
 
 - Host bind address is always `127.0.0.1`.
 - The port is `0`, so the OS chooses a free port. No fixed port is claimed.
