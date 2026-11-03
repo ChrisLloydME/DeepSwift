@@ -14,6 +14,7 @@ import { isAbsolute, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { HostRuntime, assertIsolatedHome } from './host-process.mjs'
 import { HostConnection } from './connection.mjs'
+import { discoverOpenCodeGoModels } from './opencode-models.mjs'
 import { BridgeError, PROTOCOL_VERSION, parseRequestLine } from './protocol.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -486,6 +487,9 @@ async function dispatch(method, params) {
     case 'question.delegate': {
       const { eventId } = params
       return respondInteraction(eventId, { kind: 'next' })
+    }
+    case 'opencode.discoverModels': {
+      return discoverOpenCodeGoModels()
     }
     case 'diagnostics.record': {
       const { message } = params
