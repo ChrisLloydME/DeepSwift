@@ -20,11 +20,13 @@ xcrun notarytool submit "$ZIP" \
   --password "$APPLE_APP_PASSWORD" \
   --wait
 
-# The zip is not itself stapleable; staple the app before creating the final
-# distribution archive.
+# The zip is not itself stapleable; staple the app and recreate the final
+# distribution archive so the exported zip carries the ticket.
 APP_DIR="$(dirname "$ZIP")/DeepSwift.app"
 if [[ -d "$APP_DIR" ]]; then
   xcrun stapler staple "$APP_DIR"
   xcrun stapler validate "$APP_DIR"
+  rm -f "$ZIP"
+  ditto -c -k --keepParent "$APP_DIR" "$ZIP"
 fi
 spctl --assess --type execute --verbose=4 "$APP_DIR" || true

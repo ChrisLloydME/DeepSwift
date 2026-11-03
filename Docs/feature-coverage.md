@@ -21,13 +21,13 @@ automation tasks are excluded by product scope.
 | Permissions presets | Yes | Complete | Uses official `/permission` command; hides when absent | Live catalog probe; Swift unit test |
 | Workspace register/switch/rename/remove | Yes | Complete | Reveal in Finder | Source |
 | Workspace directory browsing | Yes | Complete | Host-scoped, no direct FileManager reads | Live Host binary read; source |
-| Text/source preview | Yes | Complete | Line gutter + lightweight syntax highlighting; 5,000-line page | Build; source |
+| Text/source preview | Yes | Complete | Line gutter + lightweight syntax highlighting; 5,000-line page | SwiftUI preview; source |
 | Image preview | Yes | Complete | Native zoomable `NSImageView` in `NSScrollView` | Build; source |
 | PDF preview | Yes | Complete | PDFKit continuous view | Build; source |
 | Changed files summary | Yes | Complete | Latest live turn only; Host keeps history for its lifetime | Real turn: summary/diff |
 | Diff viewing | Yes | Complete | Unified hunks, line colors, per-file navigation | Real turn: `+hello world` hunk |
 | Terminal | Yes | Complete | SwiftTerm 1.2.5 + official terminal controller; sheet UI | Live PTY create, attach, input, output; preview |
-| Background jobs | Yes | Partial | List/progress/kill in Inspector; no dedicated job detail window | Source |
+| Background jobs | Yes | Complete | Native job roster sheet with progress, detail, and Stop; Inspector summary | Source |
 | Message search | Yes | Partial | Official search endpoint and sheet; no automated integration test | Source |
 | DeepSeek Account | Yes | Partial | OAuth start/cancel/sign-out wired; completion needs a real account | Source |
 | DeepSeek API key | Yes | Complete | Official settings + credential services | Swift tests; live Host |
@@ -69,6 +69,6 @@ automation tasks are excluded by product scope.
 - **Isolated Host:** provider catalog, binary file read, terminal controller.
 - **Real OpenCode Go:** model discovery, minimal inference, tool-backed write,
   changed-files summary, and unified diff.
-- **SwiftUI Previews:** model picker, terminal surface, changed-files card.
+- **SwiftUI Previews:** model picker, terminal surface, changed-files card, workspace source browser.
 - **Packaged app:** launched through LaunchServices with bundled Node/DSH and a
   private profile; Host reported ready and exited cleanly.

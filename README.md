@@ -29,7 +29,7 @@ repository contains no second Agent engine and no WebView or React surface.
 | Changed files / diff | Implemented | Live-turn summary card and native unified diff viewer with per-file navigation |
 | Terminal | Implemented | Official DSH terminal controller through a vendored SwiftTerm framework; attach/input/resize/exit and retained sessions |
 | Search | Partial | Official `session/search` wired; no automated integration verification |
-| Background jobs | Partial | Official job list stream and human kill are wired; no dedicated detail window |
+| Background jobs | Implemented | Official job roster stream, progress/detail, and native Stop action |
 | Subagents | Partial | Listed and read-only conversation browsing; no steering/creation controls |
 | Packaging / bundled Node | Implemented scripts | Release script embeds self-contained Node, bridge, and pinned DSH; signing/notarization needs external credentials |
 | Plugin/skill settings UI | Not implemented | Host plugin management remains available through DSH itself |
