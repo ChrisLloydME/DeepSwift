@@ -121,6 +121,7 @@ final class AppModel {
     private var terminalStreamID: String?
     private var terminalInputSequence = 0
     private var terminalLastSize: String?
+    private var terminalSendTask: Task<Void, Never>?
     private var changesSequence: Int?
     private var changesSessionID: String?
     private var eventStreamsOpened = false
@@ -1771,6 +1772,8 @@ final class AppModel {
         terminalWritable = false
         terminalInputSequence = 0
         terminalLastSize = nil
+        terminalSendTask?.cancel()
+        terminalSendTask = nil
         terminalRevision &+= 1
         let streamID = "terminal-\(UUID().uuidString.lowercased())"
         terminalStreamID = streamID
@@ -1805,6 +1808,8 @@ final class AppModel {
     }
 
     private func detachTerminalStream() {
+        terminalSendTask?.cancel()
+        terminalSendTask = nil
         guard let streamID = terminalStreamID else { return }
         terminalStreamID = nil
         Task { [bridge] in
@@ -1843,21 +1848,11 @@ final class AppModel {
         guard terminalWritable, let streamID = terminalStreamID, !bytes.isEmpty else { return }
         let data = String(decoding: bytes, as: UTF8.self)
         terminalInputSequence += 1
-        let sequence = terminalInputSequence
-        Task { [bridge] in
-            do {
-                _ = try await bridge.request("stream.send", params: .object([
-                    "id": .string(streamID),
-                    "value": .object([
-                        "type": .string("write"),
-                        "sequence": .number(Double(sequence)),
-                        "data": .string(data)
-                    ])
-                ]))
-            } catch {
-                self.terminalError = "Terminal input failed: \(error.localizedDescription)"
-            }
-        }
+        enqueueTerminalFrame(streamID: streamID, value: .object([
+            "type": .string("write"),
+            "sequence": .number(Double(terminalInputSequence)),
+            "data": .string(data)
+        ]))
     }
 
     func resizeTerminal(cols: Int, rows: Int) {
@@ -1868,20 +1863,26 @@ final class AppModel {
         guard size != terminalLastSize else { return }
         terminalLastSize = size
         terminalInputSequence += 1
-        let sequence = terminalInputSequence
-        Task { [bridge] in
+        enqueueTerminalFrame(streamID: streamID, value: .object([
+            "type": .string("resize"),
+            "sequence": .number(Double(terminalInputSequence)),
+            "cols": .number(Double(clampedCols)),
+            "rows": .number(Double(clampedRows))
+        ]))
+    }
+
+    private func enqueueTerminalFrame(streamID: String, value: JSONValue) {
+        let previous = terminalSendTask
+        terminalSendTask = Task { [weak self, bridge] in
+            _ = await previous?.value
+            guard !Task.isCancelled, let self, self.terminalStreamID == streamID else { return }
             do {
                 _ = try await bridge.request("stream.send", params: .object([
                     "id": .string(streamID),
-                    "value": .object([
-                        "type": .string("resize"),
-                        "sequence": .number(Double(sequence)),
-                        "cols": .number(Double(clampedCols)),
-                        "rows": .number(Double(clampedRows))
-                    ])
+                    "value": value
                 ]))
             } catch {
-                self.terminalError = "Terminal resize failed: \(error.localizedDescription)"
+                self.terminalError = "Terminal input failed: \(error.localizedDescription)"
             }
         }
     }
