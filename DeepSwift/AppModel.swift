@@ -2161,10 +2161,29 @@ final class AppModel {
         connectionState = .starting
         eventStreamsOpened = false
         followStreamID = nil
+        jobsStreamID = nil
+        terminalStreamID = nil
+        terminalSnapshot = nil
+        terminalOutput = ""
+        terminalWritable = false
+        terminalSendTask?.cancel()
+        terminalSendTask = nil
+        lastConnectedClientID = nil
+        await bridge.stop()
         do {
-            _ = try await bridge.request("runtime.restart", timeout: .seconds(75))
+            let configuration = try RuntimeConfiguration.resolve()
+            runtimeConfiguration = configuration
+            try await bridge.start(configuration: configuration)
+            let facts = try await bridge.request("runtime.start", timeout: .seconds(60))
+            runtimeFacts = try? facts.decode(RuntimeFacts.self)
+            connectionState = .ready
+            lastRuntimeError = nil
+            await openInitialStreams()
             await refreshSessions()
             await refreshModels()
+            await refreshPermissionCatalog()
+            await refreshAccount()
+            await refreshProviderSettings()
             if let selectedSessionID { selectSession(selectedSessionID) }
         } catch {
             connectionState = .failed(error.localizedDescription)

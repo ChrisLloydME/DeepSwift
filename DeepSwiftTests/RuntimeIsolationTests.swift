@@ -71,6 +71,22 @@ struct RuntimeIsolationTests {
         #expect(configuration.dshVersion == "0.2.1-rc.5")
     }
 
+    @Test("Bridge provider environment includes OpenCode and excludes unrelated values")
+    func bridgeProviderEnvironment() {
+        let environment = BridgeClient.providerEnvironment(from: [
+            "DEEPSEEK_API_KEY": "deepseek",
+            "OPENCODE_API_KEY": "opencode",
+            "OPENCODE_GO_API_KEY": "opencode-go",
+            "UNRELATED_SECRET": "no",
+            "PATH": "/usr/bin"
+        ])
+        #expect(environment["DEEPSEEK_API_KEY"] == "deepseek")
+        #expect(environment["OPENCODE_API_KEY"] == "opencode")
+        #expect(environment["OPENCODE_GO_API_KEY"] == "opencode-go")
+        #expect(environment["UNRELATED_SECRET"] == nil)
+        #expect(environment["PATH"] == nil)
+    }
+
     @Test("Development root contains the bridge source")
     func developmentRoot() {
         let root = RuntimeConfiguration.developmentRoot

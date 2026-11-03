@@ -54,6 +54,15 @@ actor BridgeClient: DSHBridgeService {
 
     var stderrTail: String { stderrText }
 
+    /// Provider keys that the caller opted to pass to the bridge child. The
+    /// same prefix policy is enforced again for the Host child.
+    nonisolated static func providerEnvironment(from environment: [String: String]) -> [String: String] {
+        let prefixes = ["DEEPSEEK_", "OPENAI_", "ANTHROPIC_", "OPENCODE_"]
+        return environment.filter { key, _ in
+            prefixes.contains(where: { key.hasPrefix($0) })
+        }
+    }
+
     func start(configuration: RuntimeConfiguration) async throws {
         guard process == nil else { return }
         stopping = false
@@ -79,10 +88,8 @@ actor BridgeClient: DSHBridgeService {
         }
         if configuration.allowProviderEnv {
             environment["DEEPSWIFT_ALLOW_PROVIDER_ENV"] = "1"
-            for key in ["DEEPSEEK_API_KEY", "DEEPSEEK_BASE_URL", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"] {
-                if let value = ProcessInfo.processInfo.environment[key] {
-                    environment[key] = value
-                }
+            for (key, value) in Self.providerEnvironment(from: ProcessInfo.processInfo.environment) {
+                environment[key] = value
             }
         }
         process.environment = environment
