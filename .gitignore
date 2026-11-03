@@ -1,0 +1,6 @@
+
+# Local development artifacts
+.local/
+.DS_Store
+Bridge/node_modules/
+*.xcuserstate

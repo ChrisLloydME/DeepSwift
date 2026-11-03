@@ -1,0 +1,14 @@
+{
+  "name": "deepswift-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Thin stdio JSON bridge between the native DeepSwift client and an isolated official DSH Host.",
+  "engines": {
+    "node": ">=24.9.0"
+  },
+  "scripts": {
+    "start": "node src/main.mjs",
+    "test": "node --test tests/*.test.mjs"
+  }
+}
