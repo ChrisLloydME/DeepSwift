@@ -36,6 +36,10 @@ struct ContentView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .preferredColorScheme(appearance == "light" ? .light : appearance == "dark" ? .dark : nil)
+        // The inspector column is already full height. Removing the opaque
+        // window-toolbar background lets its native glass material continue
+        // behind the toolbar instead of showing a white titlebar strip.
+        .toolbarBackground(.hidden, for: .windowToolbar)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {

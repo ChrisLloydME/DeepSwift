@@ -147,6 +147,10 @@ The app uses these official namespaces:
   view itself. The window-level toolbar owns the single inspector toggle; the
   conversation header and inspector content never declare their own toolbar
   controls. Inspector visibility lives only in `AppModel.showInspector`.
+- The window toolbar background is hidden so the inspector's system glass
+  material continues behind the native toolbar. This is a window-level
+  appearance choice; there is no custom background, blur overlay, or fixed
+  toolbar offset in the inspector.
 - Inspector metadata uses a grouped `Form` with `Section` and
   `LabeledContent`, native text selection, and system semantic colors.
 - `NSTextView` in an `NSScrollView` for the composer. Marked text is never
