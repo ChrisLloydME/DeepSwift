@@ -19,6 +19,7 @@ final class DeepSwiftUITests: XCTestCase {
         app.launchEnvironment["DEEPSWIFT_DSH_HOME"] = repositoryRoot
             .appendingPathComponent(".local/profiles/ui-test", isDirectory: true)
             .path
+        addTeardownBlock { app.terminate() }
         app.launch()
 
         XCTAssertTrue(app.windows.firstMatch.waitForExistence(timeout: 15), "The application window did not appear")
@@ -39,6 +40,7 @@ final class DeepSwiftUITests: XCTestCase {
         app.launchEnvironment["DEEPSWIFT_DSH_HOME"] = repositoryRoot
             .appendingPathComponent(".local/profiles/ui-inspector-test", isDirectory: true)
             .path
+        addTeardownBlock { app.terminate() }
         app.launch()
         app.activate()
 
