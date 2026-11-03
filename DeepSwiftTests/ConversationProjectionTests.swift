@@ -249,6 +249,24 @@ struct ConversationProjectionTests {
         #expect(projection.items.count == 1)
     }
 
+    @Test("Unknown surface events fall back to a readable notice")
+    func unknownSurfaceEvent() throws {
+        var projection = ConversationProjection()
+        projection.apply(event: try event("future/surface", seq: 1, data: [
+            "message": [
+                "id": "future-1",
+                "content": [["type": "text", "text": "A future event"]]
+            ]
+        ]))
+        #expect(projection.items.count == 1)
+        guard case let .notice(text) = projection.items[0].kind else {
+            Issue.record("Expected a notice fallback")
+            return
+        }
+        #expect(text.contains("future/surface"))
+        #expect(text.contains("A future event"))
+    }
+
     private func event(_ type: String, seq: Int, data: [String: Any]) throws -> SessionWireEvent {
         guard let value = JSONValue.from(any: [
             "type": type,

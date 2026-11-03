@@ -294,7 +294,20 @@ struct ConversationProjection: Sendable {
             let message = event.data["message"]?.stringValue ?? "The agent reported an error."
             appendNotice(id: "error-\(event.seq)", seq: event.seq, time: event.date, kind: .error(text: message))
         default:
-            break
+            // Preserve a readable fallback for a new surface event instead of
+            // silently dropping it. Log-only events without message content
+            // remain out of the transcript.
+            if let message = event.data["message"] {
+                let text = contentText(message["content"])
+                if !text.isEmpty {
+                    appendNotice(
+                        id: "event-\(event.seq)",
+                        seq: event.seq,
+                        time: event.date,
+                        kind: .notice(text: "[\(event.type)] \(text)")
+                    )
+                }
+            }
         }
         rememberFirstSeq()
     }
