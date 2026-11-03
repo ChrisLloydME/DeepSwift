@@ -99,6 +99,34 @@ confined to `Bridge/src/connection.mjs` and `Bridge/src/main.mjs`.
 | `$events` (stream) | `{args:{}}` | Forwarded emits and waterfalls |
 | `$events/result` | `{args:{clientId,eventId,outcome}}` | Waterfall reply |
 
+### OpenCode Go compatibility
+
+OpenCode Go is supplied by the pinned pi-ai catalog. Its models use different
+wire protocols and endpoints (`openai-completions`, `openai-responses`, and
+`anthropic-messages`) and the provider appends `x-opencode-session` from the
+session id that the DSH Agent already passes to every model stream.
+
+DeepSwift adds one narrowly scoped bridge method for live metadata:
+
+| Bridge method | Args | Purpose |
+|---|---|---|
+| `opencode.discoverModels` | `{}` | Fetch and decode `https://opencode.ai/inference/go/v1/models` |
+
+The method sends an identifying `DeepSwift/1.0 (macOS)` User-Agent and
+`x-opencode-client: deepswift`, and sends no credential because the metadata
+endpoint is public. It returns protocol, endpoint, context/output limits,
+modalities, and reasoning metadata for inspection. It is read-only: routing
+still comes from the installed DSH catalog, so a live response never replaces
+configured models.
+
+The pinned `llm-pi-ai` adapter does not consult this endpoint for an installed
+route; its `llm/discoverModels` returns the installed catalog. DeepSwift uses
+that catalog for installed-model counts and uses the bridge method only for the
+live OpenCode metadata view. Because a route-level `api` or `baseURL` would
+override every per-model protocol/endpoint, the Models UI never writes those
+overrides for the built-in OpenCode Go route and offers an explicit
+"Restore Installed Catalog" action for stale profiles.
+
 `workspaceFileScope` is a Typert lookup. Its wire field is
 `workspaceFileScopeId`, carrying the selected session id. The Host resolves the
 session's workspace root; the client never supplies an authoritative root.

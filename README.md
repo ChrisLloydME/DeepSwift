@@ -21,7 +21,8 @@ repository contains no second Agent engine and no WebView or React surface.
 | Tools | Implemented | Generic native tool card with per-tool icon/summary, collapsible arguments/output, errors and completion |
 | Approvals | Implemented | Official Agent-scoped approval waterfall; Allow Once / Reject; fail-closed |
 | User questions | Implemented | Native question sheet with options, multi-select, free text, plan-review detail |
-| Model selection | Implemented | Official provider-grouped catalog, reasoning efforts, session model selection, and explicit unavailable-model state |
+| Model selection | Implemented | Official provider-grouped catalog, reasoning efforts, session model selection, explicit unavailable-model state, and a bounded searchable picker sheet |
+| OpenCode Go | Implemented | Installed mixed-protocol catalog preserved; live OpenCode metadata inspection; stale route overrides can be reset |
 | Model providers / BYOK | Implemented | Official provider directory and settings APIs; DeepSeek API key, installed pi-ai providers, custom OpenAI- and Anthropic-compatible routes; official model discovery; write-only DSH credentials |
 | Account sign-in | Partial | Official browser OAuth start/cancel/sign-out wired; completion requires a real account and was not automated |
 | Workspace files | Implemented | Host-enforced directory listing, text/code preview, copy, open externally |

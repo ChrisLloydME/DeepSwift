@@ -141,6 +141,14 @@ configuration database:
 - `llm/discoverModels` returns candidate model metadata. Discovery is optional;
   the editor also accepts manual identifiers, and a partial endpoint response
   never removes existing model entries.
+- Configured installed providers are counted from `llm/discoverModels` without
+  a credential (the installed catalog does not resolve a key), so a row reflects
+  its catalog even when the key is missing. Custom routes are excluded from
+  that refresh because they would perform network I/O.
+- OpenCode Go is treated as a managed mixed-protocol provider. Its route-level
+  `api`/`baseURL` and model list are never written by the normal editor; an
+  explicit reset restores the installed catalog. Live metadata is read-only
+  through the bridge's `opencode.discoverModels` compatibility endpoint.
 - `session/modelCatalog` remains the sole source for the conversation model
   picker. Adding or changing a provider triggers a fresh catalog read, so the
   picker and settings page agree.
