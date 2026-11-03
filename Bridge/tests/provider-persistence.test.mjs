@@ -14,7 +14,7 @@ function wait(ms) {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
 
-async function startBridge(home) {
+async function startBridge(home, extraEnv = {}) {
   const child = spawn(process.execPath, ['Bridge/src/main.mjs'], {
     env: {
       PATH: process.env.PATH,
@@ -24,6 +24,7 @@ async function startBridge(home) {
       DEEPSWIFT_NODE_BIN: process.execPath,
       DEEPSWIFT_DSH_BIN: dshBin,
       DEEPSWIFT_DSH_HOME: home,
+      ...extraEnv,
     },
     stdio: ['pipe', 'pipe', 'pipe'],
   })
@@ -78,6 +79,51 @@ async function startBridge(home) {
 
   return { child, request, waitForEvent }
 }
+
+test('opted-in OpenCode credentials reach the isolated Host provider', { timeout: 60_000 }, async t => {
+  if (!existsSync(dshBin)) {
+    t.skip('Pinned DSH development runtime is not installed')
+    return
+  }
+  mkdirSync(testRoot, { recursive: true })
+  const home = mkdtempSync(join(testRoot, 'opencode-env-'))
+  const bridge = await startBridge(home, {
+    DEEPSWIFT_ALLOW_PROVIDER_ENV: '1',
+    OPENCODE_GO_API_KEY: 'test-only-opencode-key',
+  })
+  try {
+    await bridge.waitForEvent('host.connected')
+    const description = await bridge.request('host.call', {
+      namespace: 'settings', method: 'describe', args: {},
+    })
+    const pi = description.namespaces.find(namespace => namespace.ns === 'llm-pi-ai')
+    await bridge.request('host.call', {
+      namespace: 'settings',
+      method: 'mutate',
+      args: {
+        ns: 'llm-pi-ai',
+        expectedRevision: pi.revision,
+        ops: [{
+          op: 'set',
+          path: ['providers', 'opencode-go'],
+          value: { apiKeyEnv: 'OPENCODE_GO_API_KEY', displayName: 'opencode-go' },
+        }],
+      },
+    })
+    const catalog = await bridge.request('host.call', {
+      namespace: 'session', method: 'modelCatalog', args: {},
+    })
+    const group = catalog.groups.find(item => item.id === 'opencode-go')
+    assert.ok(group, 'OpenCode Go was absent from the catalog')
+    assert.ok(group.models.length > 0, 'OpenCode Go resolved no models from the passed credential')
+    assert.ok(!JSON.stringify(catalog).includes('test-only-opencode-key'))
+    await bridge.request('shutdown')
+  } finally {
+    if (bridge.child.exitCode === null) bridge.child.kill('SIGTERM')
+    await wait(250)
+    rmSync(home, { recursive: true, force: true })
+  }
+})
 
 test('provider settings and redacted credentials survive an isolated Host restart', { timeout: 120_000 }, async t => {
   if (!existsSync(dshBin)) {
