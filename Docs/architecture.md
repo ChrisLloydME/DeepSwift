@@ -143,6 +143,12 @@ The app uses these official namespaces:
 
 - `NavigationSplitView` for the main shell, `List` for navigation, native
   toolbar, search field, menus, alerts, sheets, and `Settings` scene.
+- The trailing inspector is attached to the detail column, not to the split
+  view itself. The window-level toolbar owns the single inspector toggle; the
+  conversation header and inspector content never declare their own toolbar
+  controls. Inspector visibility lives only in `AppModel.showInspector`.
+- Inspector metadata uses a grouped `Form` with `Section` and
+  `LabeledContent`, native text selection, and system semantic colors.
 - `NSTextView` in an `NSScrollView` for the composer. Marked text is never
   replaced by SwiftUI updates, preserving CJK input methods.
 - Native `NSOpenPanel` for workspaces and image attachments.
