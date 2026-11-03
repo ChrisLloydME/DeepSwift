@@ -15,7 +15,7 @@ automation tasks are excluded by product scope.
 | Tool cards/results/errors | Yes | Complete | Generic fallback card | Real write tool integration |
 | Approvals | Yes | Complete | Allow Once/Reject; fail closed | Swift unit tests; source |
 | User questions | Yes | Complete | Plan review supported | Source; preview data |
-| Subagents | Yes | Partial | List/open/read-only; no steering or creation controls | Source |
+| Subagents | Yes | Complete | List/open plus official Queue/Steer continuation prompts; creation remains Agent-tool driven | Swift unit test; source |
 | Slash commands | Yes | Complete | — | Swift unit tests |
 | File references/attachments | Yes | Complete | Local Markdown links open the Host preview; text + PNG/JPEG/GIF/WebP input | Swift unit tests; source |
 | Permissions presets | Yes | Complete | Uses official `/permission` command; hides when absent | Live catalog probe; Swift unit test |

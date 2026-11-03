@@ -65,6 +65,8 @@ final class AppModel {
     var draft = ""
     var attachments: [ComposerAttachment] = []
     var searchText = ""
+    var subagentDraft = ""
+    var isSendingSubagent = false
     var models: ModelCatalog?
     var permissionCatalog: PermissionCatalog?
     var agentPresetRoster: AgentPresetRoster?
@@ -1667,6 +1669,36 @@ final class AppModel {
             errorMessage = error.localizedDescription
         }
         isSending = false
+    }
+
+    func sendSubagentMessage(delivery: String) async {
+        guard let childID = selectedSessionID,
+              let parentID = selectedSession?.parentSessionId,
+              !subagentDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !isSendingSubagent else { return }
+        let text = subagentDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        isSendingSubagent = true
+        defer { isSendingSubagent = false }
+        do {
+            _ = try await bridge.request("host.call", params: .object([
+                "namespace": .string("subagents"),
+                "method": .string("prompt"),
+                "args": .object([
+                    "request": .object([
+                        "requestId": .string(UUID().uuidString.lowercased()),
+                        "parentSessionId": .string(parentID),
+                        "childSessionId": .string(childID),
+                        "mode": .string("continuable"),
+                        "delivery": .string(delivery),
+                        "content": .array([.object(["type": .string("text"), "text": .string(text)])]),
+                        "clientTimeZone": .string(TimeZone.current.identifier)
+                    ])
+                ])
+            ]), timeout: .seconds(30))
+            subagentDraft = ""
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     func attachImage(at url: URL) async {

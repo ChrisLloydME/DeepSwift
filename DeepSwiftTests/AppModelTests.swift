@@ -296,6 +296,45 @@ struct AppModelTests {
         #expect(model.filePreview?.text == "# Readme")
     }
 
+    @Test("Subagent messages use the official continuation API")
+    func subagentPrompt() async throws {
+        let bridge = MockBridgeService { method, params in
+            if method == "host.call", params["method"]?.stringValue == "prompt" {
+                return .object(["messageId": .string("m1")])
+            }
+            return .object([:])
+        }
+        let model = AppModel(bridge: bridge)
+        model.selectedSessionID = "child-1"
+        model.sessions = [
+            SessionSummary(
+                sessionId: "child-1",
+                updatedAt: 1,
+                running: true,
+                blank: false,
+                cwd: "/tmp/work",
+                agentAvailable: true,
+                formatStatus: "current",
+                parentSessionId: "parent-1",
+                origin: "subagent",
+                projections: nil
+            )
+        ]
+        model.subagentDraft = "Keep going"
+
+        await model.sendSubagentMessage(delivery: "steer")
+
+        let requests = await bridge.recordedRequests()
+        let prompt = try #require(requests.first { $0.method == "host.call" && $0.params["method"]?.stringValue == "prompt" })
+        #expect(prompt.params["namespace"]?.stringValue == "subagents")
+        let request = try #require(prompt.params["args"]?["request"])
+        #expect(request["parentSessionId"]?.stringValue == "parent-1")
+        #expect(request["childSessionId"]?.stringValue == "child-1")
+        #expect(request["delivery"]?.stringValue == "steer")
+        #expect(request["mode"]?.stringValue == "continuable")
+        #expect(model.subagentDraft.isEmpty)
+    }
+
     @Test("Agent presets switch through the official registry")
     func agentPresetSwitch() async throws {
         let bridge = MockBridgeService { method, params in

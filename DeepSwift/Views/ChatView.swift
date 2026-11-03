@@ -20,16 +20,7 @@ struct ChatView: View {
             }
             Divider()
             if model.selectedSession?.isSubagent == true {
-                HStack(spacing: 8) {
-                    Image(systemName: "eye")
-                    Text("Subagent conversation · read-only")
-                        .font(.callout)
-                    Spacer()
-                }
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 14)
-                .background(.bar)
+                SubagentComposer(model: model)
             } else {
                 ComposerView()
             }
