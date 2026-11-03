@@ -212,7 +212,8 @@ Deliberately ignored or summarized:
 - runtime context and time snapshots (`user/message` with non-user sources);
 - request headers/context, inbox splicing, step and turn boundaries;
 - unknown tool event names (the tool card remains generic);
-- unknown session event types.
+- log-only unknown session event types. An unknown event that carries message
+  content gets a readable fallback notice instead of being silently dropped.
 
 This avoids inventing semantics for DSH presentation surfaces that are not part
 of the stable session vocabulary.
@@ -221,11 +222,11 @@ of the stable session vocabulary.
 
 | Surface | Status | Fallback |
 |---|---|---|
-| Terminal controller streams | Unsupported | No shell is started; terminal stays unavailable |
-| Binary file transfer / image preview | Unsupported in this bridge | Text preview or a safe "preview unavailable" message |
-| Diff rendering | Unsupported | Tool output shows the exact textual result |
-| Session fork / queue edit / pin / workspace delete | API known, UI absent | Not exposed rather than approximated |
-| Plugin/skill management | API known, UI absent | Use official DSH tooling |
+| Terminal controller streams | Supported | Native SwiftTerm surface; retained Host PTY |
+| Binary file transfer / image / PDF | Supported | Host-scoped `readBytes`; native image/PDF views |
+| Diff rendering | Supported | `/api/changes.summary` and `/api/changes.diff` |
+| Session fork / queue edit | API known, UI absent | Not exposed rather than approximated |
+| Plugin/skill management | Excluded by product scope | Use official DSH tooling |
 | Subagent steering | Read-only browsing | No prompt is sent to a subagent session |
 | `session/load` transcript replay | Not used | `session/follow` snapshot is authoritative |
 | Additional workspace directories | Unsupported by upstream ACP/Desktop flows | Single session workspace |

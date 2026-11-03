@@ -17,7 +17,7 @@ automation tasks are excluded by product scope.
 | User questions | Yes | Complete | Plan review supported | Source; preview data |
 | Subagents | Yes | Partial | List/open/read-only; no steering or creation controls | Source |
 | Slash commands | Yes | Complete | — | Swift unit tests |
-| File references/attachments | Yes | Complete | Text + PNG/JPEG/GIF/WebP input | Swift unit tests |
+| File references/attachments | Yes | Complete | Local Markdown links open the Host preview; text + PNG/JPEG/GIF/WebP input | Swift unit tests; source |
 | Permissions presets | Yes | Complete | Uses official `/permission` command; hides when absent | Live catalog probe; Swift unit test |
 | Agent presets | Yes | Complete | Official `agentPresets/list/select`; hidden after the first turn locks composition | Live roster/selection probe; Swift unit test |
 | Workspace register/switch/rename/remove | Yes | Complete | Reveal in Finder | Source |
