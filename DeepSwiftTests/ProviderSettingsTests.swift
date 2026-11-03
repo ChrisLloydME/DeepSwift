@@ -192,6 +192,66 @@ struct ProviderSettingsTests {
         #expect(!operations.contains { $0["op"]?.stringValue == "set" && $0["path"]?.arrayValue?.compactMap { $0.stringValue } == ["providers", "opencode-go", "api"] })
     }
 
+    @Test("Provider refresh counts an installed catalog without a credential")
+    func refreshInstalledCatalog() async throws {
+        let piNamespace = namespace("llm-pi-ai", value: [
+            "providers": .object([
+                "opencode-go": .object([
+                    "apiKeyEnv": .string("OPENCODE_GO_API_KEY"),
+                    "models": .array([])
+                ])
+            ])
+        ])
+        let directoryEntry = ConfigurableProvider(
+            provider: "opencode-go",
+            displayName: "opencode-go",
+            settingsNs: "llm-pi-ai",
+            settingsPath: ["providers", "opencode-go"],
+            declared: false,
+            defaultBaseURL: nil,
+            baseURLEnv: nil,
+            nativeAuth: .init(env: ["OPENCODE_API_KEY"], oauth: false),
+            error: nil
+        )
+        let bridge = MockBridgeService { method, params in
+            guard method == "host.call" else { return .object([:]) }
+            switch params["method"]?.stringValue {
+            case "describe":
+                if params["namespace"]?.stringValue == "settings" {
+                    return try! JSONValue.encode(SettingsDescription(
+                        writable: true,
+                        hasDocument: true,
+                        namespaces: [piNamespace]
+                    ))
+                }
+                return .object([:])
+            case "listConfigurableProviders":
+                return try! JSONValue.encode([directoryEntry])
+            case "discoverModels":
+                return try! JSONValue.encode((0..<30).map { index in
+                    DiscoveredModel(
+                        id: "model-\(index)",
+                        name: "Model \(index)",
+                        contextWindow: 32_000,
+                        maxTokens: 4_096,
+                        inputModalities: ["text"]
+                    )
+                })
+            default:
+                return .object([:])
+            }
+        }
+        let model = AppModel(bridge: bridge)
+        model.connectionState = AppModel.ConnectionState.ready
+
+        await model.refreshProviderSettings()
+
+        let row = try #require(model.providerRows.first)
+        #expect(row.id == "opencode-go")
+        #expect(row.modelCount == 30)
+        #expect(model.installedProviderModels["opencode-go"]?.count == 30)
+    }
+
     @Test("OpenCode Go live metadata decodes mixed protocols")
     func openCodeGoMetadata() throws {
         let json = """
