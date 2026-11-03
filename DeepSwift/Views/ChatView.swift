@@ -151,7 +151,20 @@ private struct ChatHeader: View {
             }
 
             if let models = model.models, !models.isEmpty {
-                ModelMenu(catalog: models)
+                if let selection = model.conversation.modelSelection, !models.contains(selection) {
+                    Label("Selected model unavailable", systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .help("Choose another model from the Model menu.")
+                }
+                ModelMenu(catalog: models, selected: model.conversation.modelSelection)
+            } else {
+                SettingsLink {
+                    Label("Configure Models", systemImage: "cpu")
+                        .font(.caption)
+                }
+                .buttonStyle(.borderless)
+                .help("Open Models settings")
             }
         }
         .padding(.horizontal, 20)
@@ -163,6 +176,7 @@ private struct ChatHeader: View {
 private struct ModelMenu: View {
     @Environment(AppModel.self) private var model
     let catalog: ModelCatalog
+    let selected: ModelSelection?
 
     var body: some View {
         Menu {
@@ -174,18 +188,36 @@ private struct ModelMenu: View {
                     ForEach(group.models) { entry in
                         if let efforts = entry.reasoning?.efforts, !efforts.isEmpty {
                             Menu(entry.displayName) {
-                                Button("Default") {
+                                Button {
                                     select(provider: group.id, model: entry, effort: entry.reasoning?.defaultEffort)
+                                } label: {
+                                    if isSelected(group.id, entry, effort: nil) {
+                                        Label("Default", systemImage: "checkmark")
+                                    } else {
+                                        Text("Default")
+                                    }
                                 }
                                 ForEach(efforts, id: \.id) { effort in
-                                    Button(effort.displayName) {
+                                    Button {
                                         select(provider: group.id, model: entry, effort: effort.id)
+                                    } label: {
+                                        if isSelected(group.id, entry, effort: effort.id) {
+                                            Label(effort.displayName, systemImage: "checkmark")
+                                        } else {
+                                            Text(effort.displayName)
+                                        }
                                     }
                                 }
                             }
                         } else {
-                            Button(entry.displayName) {
+                            Button {
                                 select(provider: group.id, model: entry, effort: entry.reasoning?.defaultEffort)
+                            } label: {
+                                if isSelected(group.id, entry, effort: nil) {
+                                    Label(entry.displayName, systemImage: "checkmark")
+                                } else {
+                                    Text(entry.displayName)
+                                }
                             }
                         }
                     }
@@ -195,17 +227,28 @@ private struct ModelMenu: View {
                 Divider()
                 Section("Unavailable") {
                     ForEach(Array(failures.enumerated()), id: \.offset) { _, failure in
-                        Text("\(failure.provider ?? "Provider"): \(failure.message ?? "unavailable")")
+                        Text("\(failure.displayName): \(failure.message ?? "unavailable")")
                     }
                 }
             }
         } label: {
-            Label("Model", systemImage: "cpu")
+            Label(selectedModelName ?? "Model", systemImage: "cpu")
                 .labelStyle(.titleAndIcon)
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
         .help("Select model for this session")
+    }
+
+    private var selectedModelName: String? {
+        guard let selected else { return nil }
+        return catalog.model(for: selected)?.displayName
+    }
+
+    private func isSelected(_ provider: String, _ model: ModelCatalog.Group.Model, effort: String?) -> Bool {
+        guard let selected, selected.provider == provider, selected.model == model.id else { return false }
+        if let effort { return selected.reasoningEffort == effort }
+        return selected.reasoningEffort == nil
     }
 
     private func select(provider: String, model: ModelCatalog.Group.Model, effort: String?) {

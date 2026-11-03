@@ -202,6 +202,30 @@ struct ConversationProjectionTests {
         #expect(projection.live?.toolNames == ["read"])
     }
 
+    @Test("Session model selection is retained for availability checks")
+    func tracksModelSelection() throws {
+        var projection = ConversationProjection()
+        projection.apply(event: try event("model/selection", seq: 4, data: [
+            "provider": "acme-gateway",
+            "model": "acme-chat",
+            "reasoningEffort": "high"
+        ]))
+        let selection = try #require(projection.modelSelection)
+        #expect(selection.provider == "acme-gateway")
+        #expect(selection.model == "acme-chat")
+        #expect(selection.reasoningEffort == "high")
+
+        let catalog = ModelCatalog(
+            defaultSelection: nil,
+            groups: [.init(id: "acme-gateway", name: "Acme", models: [
+                .init(id: "acme-chat", name: "Acme Chat", reasoning: nil, available: true)
+            ])],
+            failures: nil
+        )
+        #expect(catalog.contains(selection))
+        #expect(!catalog.contains(ModelSelection(provider: "acme-gateway", model: "removed", reasoningEffort: nil)))
+    }
+
     @Test("Snapshot establishes the page cursor and title")
     func appliesSnapshot() throws {
         var projection = ConversationProjection()

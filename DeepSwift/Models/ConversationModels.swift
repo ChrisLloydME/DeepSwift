@@ -171,6 +171,7 @@ struct ConversationProjection: Sendable {
     private(set) var hasMore: Bool = false
     private(set) var isLoaded: Bool = false
     private(set) var permissionPreset: String?
+    private(set) var modelSelection: ModelSelection?
 
     private var seenSequences: Set<Int> = []
     private var indexByItemID: [String: Int] = [:]
@@ -189,6 +190,7 @@ struct ConversationProjection: Sendable {
         hasMore = false
         isLoaded = false
         permissionPreset = nil
+        modelSelection = nil
         seenSequences = []
         indexByItemID = [:]
         toolIndexByCallID = [:]
@@ -275,6 +277,8 @@ struct ConversationProjection: Sendable {
             if let value = event.data["title"]?.stringValue { title = value }
         case "permission/preset":
             if let value = event.data["preset"]?.stringValue { permissionPreset = value }
+        case "model/selection":
+            modelSelection = try? event.data.decode(ModelSelection.self)
         case "command/done":
             let text = event.data["text"]?.stringValue
             let kind = event.data["kind"]?.stringValue

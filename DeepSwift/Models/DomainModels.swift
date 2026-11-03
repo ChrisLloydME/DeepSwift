@@ -111,8 +111,11 @@ struct ModelCatalog: Codable, Sendable {
     }
 
     struct Failure: Codable, Sendable {
-        let provider: String?
+        let id: String?
+        let name: String?
         let message: String?
+
+        var displayName: String { name ?? id ?? "Provider" }
     }
 
     let defaultSelection: ModelSelection?
@@ -126,6 +129,16 @@ struct ModelCatalog: Codable, Sendable {
     }
 
     var isEmpty: Bool { groups.allSatisfy(\.models.isEmpty) }
+
+    func contains(_ selection: ModelSelection) -> Bool {
+        groups.contains { group in
+            group.id == selection.provider && group.models.contains { $0.id == selection.model }
+        }
+    }
+
+    func model(for selection: ModelSelection) -> Group.Model? {
+        groups.first { $0.id == selection.provider }?.models.first { $0.id == selection.model }
+    }
 }
 
 struct PendingApproval: Identifiable, Hashable, Sendable, Codable {
