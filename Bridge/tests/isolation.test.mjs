@@ -47,6 +47,7 @@ test('host environment drops ambient DSH variables and provider secrets by defau
     },
   })
   assert.equal(env.DSH_HOME, '/tmp/isolated')
+  assert.equal(env.DSH_AGENTS_HOME, '/tmp/isolated/agents')
   assert.equal(env.DSH_PROFILE, undefined)
   assert.equal(env.DEEPSEEK_API_KEY, undefined)
   assert.equal(env.npm_config_cache, '/tmp/isolated/cache/npm')

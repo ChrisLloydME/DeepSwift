@@ -518,7 +518,6 @@ rl.on('line', (line) => {
     return
   }
   if (request === null) return
-  logLine(`request ${request.method}`)
   void dispatch(request.method, request.params)
     .then((result) => {
       write({ id: request.id, result })

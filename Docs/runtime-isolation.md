@@ -40,12 +40,13 @@ DeepSwift then sets:
 
 ```text
 DSH_HOME=<isolated home>
+DSH_AGENTS_HOME=<isolated home>/agents
 NO_COLOR=1
 npm_config_cache=<isolated home>/cache/npm
 npm_config_update_notifier=false
 ```
 
-Every ambient `DSH_*` variable is removed. Provider API keys are passed only
+Every ambient `DSH_*` variable is removed, including `DSH_AGENTS_HOME`; the Host's shared agent instructions and skills therefore stay inside the isolated profile rather than reading the user's `~/.agents`. Provider API keys are passed only
 when the user explicitly enables **Settings › Runtime › Pass provider API key
 environment variables**. In that case only variables matching
 `DEEPSEEK_*`, `OPENAI_*`, or `ANTHROPIC_*` are copied. They are never written to

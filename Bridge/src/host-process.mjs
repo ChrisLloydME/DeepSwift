@@ -61,6 +61,8 @@ export function buildHostEnvironment({ home, baseEnv = process.env, allowProvide
     }
   }
   env.DSH_HOME = home
+  // Keep shared agent instructions and skills out of the user's ~/.agents.
+  env.DSH_AGENTS_HOME = join(home, 'agents')
   env.NO_COLOR = '1'
   env.npm_config_cache = join(home, 'cache', 'npm')
   env.npm_config_update_notifier = 'false'
