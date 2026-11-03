@@ -179,14 +179,21 @@ private struct ModelMenu: View {
             }
             ForEach(catalog.groups) { group in
                 Section(group.name ?? group.id) {
-                    ForEach(group.models) { model in
-                        Button(model.displayName) {
-                            Task {
-                                await self.model.selectModel(ModelSelection(
-                                    provider: group.id,
-                                    model: model.id,
-                                    reasoningEffort: model.reasoning?.defaultEffort
-                                ))
+                    ForEach(group.models) { entry in
+                        if let efforts = entry.reasoning?.efforts, !efforts.isEmpty {
+                            Menu(entry.displayName) {
+                                Button("Default") {
+                                    select(provider: group.id, model: entry, effort: entry.reasoning?.defaultEffort)
+                                }
+                                ForEach(efforts, id: \.id) { effort in
+                                    Button(effort.displayName) {
+                                        select(provider: group.id, model: entry, effort: effort.id)
+                                    }
+                                }
+                            }
+                        } else {
+                            Button(entry.displayName) {
+                                select(provider: group.id, model: entry, effort: entry.reasoning?.defaultEffort)
                             }
                         }
                     }
@@ -207,6 +214,16 @@ private struct ModelMenu: View {
         .menuStyle(.borderlessButton)
         .fixedSize()
         .help("Select model for this session")
+    }
+
+    private func select(provider: String, model: ModelCatalog.Group.Model, effort: String?) {
+        Task {
+            await self.model.selectModel(ModelSelection(
+                provider: provider,
+                model: model.id,
+                reasoningEffort: effort
+            ))
+        }
     }
 }
 

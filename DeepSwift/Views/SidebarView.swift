@@ -117,6 +117,15 @@ struct SidebarView: View {
                     Button("Rename…") {
                         renameTarget = .session(session)
                     }
+                    if model.pinnedSessionIDs.contains(session.sessionId) {
+                        Button("Unpin") {
+                            Task { await model.unpinSession(session) }
+                        }
+                    } else {
+                        Button("Pin") {
+                            Task { await model.pinSession(session) }
+                        }
+                    }
                     Button("Archive") {
                         Task { await model.archiveSession(session) }
                     }

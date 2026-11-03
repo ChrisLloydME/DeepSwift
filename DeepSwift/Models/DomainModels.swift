@@ -84,9 +84,17 @@ struct ModelSelection: Codable, Hashable, Sendable {
 struct ModelCatalog: Codable, Sendable {
     struct Group: Codable, Identifiable, Sendable {
         struct Model: Codable, Identifiable, Sendable {
+            struct ReasoningEffort: Codable, Sendable {
+                let id: String
+                let name: String?
+                let description: String?
+
+                var displayName: String { name ?? id }
+            }
+
             struct Reasoning: Codable, Sendable {
                 let defaultEffort: String?
-                let efforts: [String]?
+                let efforts: [ReasoningEffort]?
             }
 
             let id: String

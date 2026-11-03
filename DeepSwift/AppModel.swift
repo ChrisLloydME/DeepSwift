@@ -924,6 +924,32 @@ final class AppModel {
         }
     }
 
+    func pinSession(_ session: SessionSummary) async {
+        do {
+            let result = try await bridge.request("host.call", params: .object([
+                "namespace": .string("workspace"),
+                "method": .string("pinSession"),
+                "args": .object(["request": .object(["sessionId": .string(session.sessionId)])])
+            ]))
+            pinnedSessionIDs = result["pinnedSessionIds"]?.arrayValue?.compactMap(\.stringValue) ?? pinnedSessionIDs
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func unpinSession(_ session: SessionSummary) async {
+        do {
+            let result = try await bridge.request("host.call", params: .object([
+                "namespace": .string("workspace"),
+                "method": .string("unpinSession"),
+                "args": .object(["request": .object(["sessionId": .string(session.sessionId)])])
+            ]))
+            pinnedSessionIDs = result["pinnedSessionIds"]?.arrayValue?.compactMap(\.stringValue) ?? pinnedSessionIDs
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func unarchiveSession(_ sessionID: String) async {
         do {
             let result = try await bridge.request("host.call", params: .object([
