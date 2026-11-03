@@ -65,6 +65,13 @@ final class AppModel {
     var models: ModelCatalog?
     var commands: [CommandDescriptor] = []
     var account: AccountView?
+    var providerDirectory: [ConfigurableProvider] = []
+    var settingsNamespaces: [String: SettingsNamespaceView] = [:]
+    var providerCredentials: [String: CredentialStatus] = [:]
+    var providerSettingsWritable = true
+    var isLoadingProviders = false
+    var providerError: String?
+    var isSavingProvider = false
     var isSigningIn = false
     var pendingApprovals: [PendingApproval] = []
     var pendingQuestions: [PendingQuestion] = []
@@ -100,6 +107,156 @@ final class AppModel {
     private var followAddress: JSONValue = .object(["kind": .string("session")])
     private var openedSignInAttemptID: String?
 
+    // MARK: - Provider configuration
+
+    var providerRows: [ProviderRow] {
+        var rows: [ProviderRow] = []
+        let directoryByID = Dictionary(uniqueKeysWithValues: providerDirectory.map { ($0.provider, $0) })
+
+        if let namespace = settingsNamespaces["llm-deepseek"] {
+            let effective = namespace.value.objectValue ?? [:]
+            let user = namespace.user?.objectValue
+            let models = effective["models"]?.arrayValue ?? []
+            let reference = user?["apiKeyEnv"]?.stringValue
+                ?? effective["apiKeyEnv"]?.stringValue
+                ?? "DEEPSEEK_API_KEY"
+            rows.append(ProviderRow(
+                id: "deepseek-official",
+                displayName: "DeepSeek API Key",
+                layout: .deepSeek,
+                isCustom: false,
+                isConfigured: true,
+                settingsNamespace: namespace.ns,
+                settingsRevision: namespace.revision,
+                apiKeyEnv: reference,
+                credential: providerCredentials[reference],
+                nativeAuthEnv: ["DEEPSEEK_API_KEY"],
+                defaultBaseURL: "https://api.deepseek.com/anthropic",
+                baseURLEnv: ["DEEPSEEK_BASE_URL"],
+                effectiveModels: models,
+                modelCount: models.count,
+                error: nil,
+                userProfile: namespace.user,
+                effectiveProfile: namespace.value
+            ))
+        }
+
+        if let namespace = settingsNamespaces["llm-pi-ai"],
+           let effectiveProfiles = namespace.value["providers"]?.objectValue {
+            let userProfiles = namespace.user?["providers"]?.objectValue ?? [:]
+            for (provider, profileValue) in effectiveProfiles {
+                let profile = profileValue.objectValue ?? [:]
+                let userProfile = userProfiles[provider]
+                let entry = directoryByID[provider]
+                let reference = profile["apiKeyEnv"]?.stringValue
+                    ?? userProfile?["apiKeyEnv"]?.stringValue
+                let credential = reference.map { providerCredentials[$0] }
+                    ?? providerCredentials[ProviderRow.derivedCredentialRef(for: provider)]
+                let models = profile["models"]?.arrayValue ?? []
+                rows.append(ProviderRow(
+                    id: provider,
+                    displayName: profile["displayName"]?.stringValue ?? entry?.displayName ?? provider,
+                    layout: .piAI,
+                    isCustom: entry?.isCustomRoute == true || entry == nil,
+                    isConfigured: true,
+                    settingsNamespace: namespace.ns,
+                    settingsRevision: namespace.revision,
+                    apiKeyEnv: reference,
+                    credential: credential,
+                    nativeAuthEnv: entry?.nativeAuth?.env ?? [],
+                    defaultBaseURL: entry?.defaultBaseURL,
+                    baseURLEnv: entry?.baseURLEnv ?? [],
+                    effectiveModels: models,
+                    modelCount: models.count,
+                    error: entry?.error,
+                    userProfile: userProfile,
+                    effectiveProfile: profileValue
+                ))
+            }
+        }
+
+        return rows.sorted {
+            if $0.layout != $1.layout { return $0.layout == .deepSeek }
+            return $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+        }
+    }
+
+    var unconfiguredProviders: [ConfigurableProvider] {
+        let configured = Set(providerRows.map(\.id))
+        return providerDirectory
+            .filter { !["deepseek-official", "deepseek-account"].contains($0.provider) }
+            .filter { !configured.contains($0.provider) }
+            .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+    }
+
+    func providerDraft(for row: ProviderRow) -> ProviderDraft {
+        let effective = row.effectiveProfile?.objectValue ?? [:]
+        let user = row.userProfile?.objectValue ?? [:]
+        let isDeepSeek = row.layout == .deepSeek
+        let modelValues = user["models"]?.arrayValue
+            ?? effective["models"]?.arrayValue
+            ?? []
+        let api = effective["api"]?.stringValue.flatMap(ProviderProtocol.init(rawValue:))
+            ?? user["api"]?.stringValue.flatMap(ProviderProtocol.init(rawValue:))
+        let reference = user["apiKeyEnv"]?.stringValue
+            ?? effective["apiKeyEnv"]?.stringValue
+            ?? (isDeepSeek ? "DEEPSEEK_API_KEY" : "")
+        return ProviderDraft(
+            providerID: row.id,
+            displayName: isDeepSeek ? "DeepSeek API Key" : (effective["displayName"]?.stringValue ?? row.displayName),
+            baseURL: user["baseURL"]?.stringValue ?? effective["baseURL"]?.stringValue ?? "",
+            apiKeyEnv: reference,
+            api: api,
+            layout: row.layout,
+            isNew: false,
+            isCustom: row.isCustom,
+            modelsEdited: user["models"] != nil,
+            models: modelValues.map { ModelDraft(json: $0, layout: row.layout) },
+            effectiveModelCount: modelValues.count,
+            defaultBaseURL: row.defaultBaseURL,
+            baseURLEnv: row.baseURLEnv,
+            nativeAuthEnv: row.nativeAuthEnv
+        )
+    }
+
+    func newBuiltInProviderDraft(for entry: ConfigurableProvider) -> ProviderDraft {
+        ProviderDraft(
+            providerID: entry.provider,
+            displayName: entry.displayName,
+            baseURL: "",
+            apiKeyEnv: "",
+            api: nil,
+            layout: .piAI,
+            isNew: true,
+            isCustom: false,
+            modelsEdited: false,
+            models: [],
+            effectiveModelCount: 0,
+            defaultBaseURL: entry.defaultBaseURL,
+            baseURLEnv: entry.baseURLEnv ?? [],
+            nativeAuthEnv: entry.nativeAuth?.env ?? []
+        )
+    }
+
+    func newCustomProviderDraft() -> ProviderDraft {
+        ProviderDraft(
+            providerID: "",
+            displayName: "",
+            baseURL: "",
+            apiKeyEnv: "",
+            api: .openAICompletions,
+            layout: .piAI,
+            isNew: true,
+            isCustom: true,
+            modelsEdited: true,
+            models: [ModelDraft()],
+            effectiveModelCount: 0,
+            defaultBaseURL: nil,
+            baseURLEnv: [],
+            nativeAuthEnv: []
+        )
+    }
+
     init(bridge: any DSHBridgeService = BridgeClient()) {
         self.bridge = bridge
     }
@@ -124,6 +281,7 @@ final class AppModel {
             await refreshSessions()
             await refreshModels()
             await refreshAccount()
+            await refreshProviderSettings()
         } catch {
             logger.error("Bootstrap failed: \(error.localizedDescription, privacy: .public)")
             connectionState = .failed(error.localizedDescription)
@@ -523,6 +681,281 @@ final class AppModel {
         } catch {
             diagnosticLog = "Model catalog unavailable: \(error.localizedDescription)"
         }
+    }
+
+
+    // MARK: - Provider settings
+
+    func refreshProviderSettings() async {
+        guard connectionState.isReady else { return }
+        isLoadingProviders = true
+        defer { isLoadingProviders = false }
+        do {
+            let descriptionValue = try await callHost("settings", "describe", .object([:]))
+            let description = try descriptionValue.decode(SettingsDescription.self)
+            let directoryValue = try await callHost("llm", "listConfigurableProviders", .object([:]))
+            let directory = try directoryValue.decode([ConfigurableProvider].self)
+
+            settingsNamespaces = description.byNamespace
+            providerDirectory = directory
+            providerSettingsWritable = description.writable
+
+            let refs = credentialReferences()
+            if refs.isEmpty {
+                providerCredentials = [:]
+            } else {
+                let credentialsValue = try await callHost(
+                    "credentials",
+                    "describe",
+                    .object(["refs": .array(refs.map(JSONValue.string))])
+                )
+                providerCredentials = try credentialsValue.decode([String: CredentialStatus].self)
+            }
+            providerError = nil
+        } catch {
+            providerError = safeProviderError(error)
+        }
+    }
+
+    func saveProvider(_ draft: ProviderDraft, apiKey: String) async throws {
+        guard connectionState.isReady else {
+            throw ProviderSettingsError(message: "The DSH runtime is not connected.")
+        }
+        guard providerSettingsWritable else {
+            throw ProviderSettingsError(message: "This DSH profile is read-only.")
+        }
+
+        isSavingProvider = true
+        defer { isSavingProvider = false }
+        let secret = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            if !secret.isEmpty, !Self.isValidAPIKey(secret) {
+                throw ProviderSettingsError(message: "API keys may contain only printable ASCII characters and no spaces.")
+            }
+
+            var existing = Set(providerDirectory.map(\.provider))
+            existing.formUnion(providerRows.map(\.id))
+            if !draft.isNew { existing.remove(draft.providerID) }
+            if draft.isNew && !draft.isCustom { existing.remove(draft.providerID) }
+            if let error = draft.validationError(existingProviderIDs: existing) {
+                throw ProviderSettingsError(message: error)
+            }
+
+            if draft.isNew && !draft.isCustom && secret.isEmpty && draft.apiKeyEnv.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let entry = providerDirectory.first { $0.provider == draft.providerID }
+                let hasNativeAuth = !(entry?.nativeAuth?.env.isEmpty ?? true) || entry?.nativeAuth?.oauth == true
+                if !hasNativeAuth {
+                    throw ProviderSettingsError(message: "Enter an API key, or configure environment/native authentication for this provider.")
+                }
+            }
+
+            let namespace = draft.layout == .deepSeek ? "llm-deepseek" : "llm-pi-ai"
+            let revision = settingsNamespaces[namespace]?.revision
+            let operations = settingsOperations(for: draft, keyProvided: !secret.isEmpty)
+
+            if !operations.isEmpty {
+                var args: [String: JSONValue] = [
+                    "ns": .string(namespace),
+                    "ops": .array(try operations.map { try JSONValue.encode($0) })
+                ]
+                if let revision { args["expectedRevision"] = .number(revision) }
+                let value = try await callHost("settings", "mutate", .object(args))
+                let updated = try value.decode(SettingsNamespaceView.self)
+                settingsNamespaces[namespace] = updated
+            }
+
+            if !secret.isEmpty {
+                _ = try await callHost(
+                    "credentials",
+                    "set",
+                    .object([
+                        "ref": .string(draft.credentialRef()),
+                        "value": .string(secret)
+                    ])
+                )
+            }
+
+            await refreshProviderSettings()
+            await refreshModels()
+            providerError = nil
+        } catch let error as ProviderSettingsError {
+            providerError = error.message
+            throw error
+        } catch {
+            let message = safeProviderError(error, secret: secret)
+            providerError = message
+            throw ProviderSettingsError(message: message)
+        }
+    }
+
+    func removeProvider(_ row: ProviderRow) async throws {
+        guard row.layout == .piAI else {
+            throw ProviderSettingsError(message: "The built-in DeepSeek API provider cannot be removed.")
+        }
+        guard providerSettingsWritable else {
+            throw ProviderSettingsError(message: "This DSH profile is read-only.")
+        }
+        do {
+            let revision = settingsNamespaces["llm-pi-ai"]?.revision
+            var args: [String: JSONValue] = [
+                "ns": .string("llm-pi-ai"),
+                "ops": .array([
+                    try JSONValue.encode(SettingsOperation.unset(["providers", row.id]))
+                ])
+            ]
+            if let revision { args["expectedRevision"] = .number(revision) }
+            _ = try await callHost("settings", "mutate", .object(args))
+
+            let managedRef = ProviderRow.derivedCredentialRef(for: row.id)
+            if row.apiKeyEnv == managedRef,
+               let credential = providerCredentials[managedRef],
+               credential.configured,
+               credential.isWritable {
+                _ = try? await callHost("credentials", "unset", .object(["ref": .string(managedRef)]))
+            }
+            await refreshProviderSettings()
+            await refreshModels()
+            providerError = nil
+        } catch {
+            let message = safeProviderError(error)
+            providerError = message
+            throw ProviderSettingsError(message: message)
+        }
+    }
+
+    func removeCredential(reference: String) async throws {
+        do {
+            _ = try await callHost("credentials", "unset", .object(["ref": .string(reference)]))
+            await refreshProviderSettings()
+        } catch {
+            let message = safeProviderError(error)
+            providerError = message
+            throw ProviderSettingsError(message: message)
+        }
+    }
+
+    func discoverModels(
+        settingsNamespace: String,
+        provider: String?,
+        baseURL: String?,
+        api: String?,
+        apiKey: String?
+    ) async throws -> [DiscoveredModel] {
+        var request: [String: JSONValue] = [:]
+        if let provider, !provider.isEmpty { request["provider"] = .string(provider) }
+        if let baseURL, !baseURL.isEmpty { request["baseURL"] = .string(baseURL) }
+        if let api, !api.isEmpty { request["api"] = .string(api) }
+        let secret = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !secret.isEmpty { request["apiKey"] = .string(secret) }
+        do {
+            let value = try await callHost(
+                "llm",
+                "discoverModels",
+                .object([
+                    "settingsNs": .string(settingsNamespace),
+                    "request": .object(request)
+                ]),
+                timeout: .seconds(45)
+            )
+            return try value.decode([DiscoveredModel].self)
+        } catch {
+            throw ProviderSettingsError(message: safeProviderError(error, secret: secret))
+        }
+    }
+
+    private func credentialReferences() -> [String] {
+        var refs = Set<String>()
+        if let deepSeek = settingsNamespaces["llm-deepseek"] {
+            let reference = deepSeek.user?["apiKeyEnv"]?.stringValue
+                ?? deepSeek.value["apiKeyEnv"]?.stringValue
+                ?? "DEEPSEEK_API_KEY"
+            if !reference.isEmpty { refs.insert(reference) }
+        }
+        if let piAI = settingsNamespaces["llm-pi-ai"],
+           let profiles = piAI.value["providers"]?.objectValue {
+            for (provider, profile) in profiles {
+                if let reference = profile["apiKeyEnv"]?.stringValue, !reference.isEmpty {
+                    refs.insert(reference)
+                } else {
+                    refs.insert(ProviderRow.derivedCredentialRef(for: provider))
+                }
+            }
+        }
+        return refs.sorted()
+    }
+
+    private func settingsOperations(for draft: ProviderDraft, keyProvided: Bool) -> [SettingsOperation] {
+        let name = draft.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseURL = draft.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let reference = draft.credentialRef()
+        let referenceIsExplicit = !draft.apiKeyEnv.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+        if draft.layout == .deepSeek {
+            var operations: [SettingsOperation] = []
+            operations.append(baseURL.isEmpty ? .unset(["baseURL"]) : .set(["baseURL"], .string(baseURL)))
+            if draft.modelsEdited {
+                operations.append(.set(["models"], .array(draft.modelJSON())))
+            }
+            operations.append(referenceIsExplicit ? .set(["apiKeyEnv"], .string(reference)) : .unset(["apiKeyEnv"]))
+            return operations
+        }
+
+        if draft.isNew {
+            var profile: [String: JSONValue] = [:]
+            if !name.isEmpty { profile["displayName"] = .string(name) }
+            if !baseURL.isEmpty { profile["baseURL"] = .string(baseURL) }
+            if draft.isCustom, let api = draft.api { profile["api"] = .string(api.rawValue) }
+            if draft.modelsEdited || draft.isCustom {
+                profile["models"] = .array(draft.modelJSON())
+            }
+            if keyProvided || referenceIsExplicit {
+                profile["apiKeyEnv"] = .string(reference)
+            }
+            return [.set(["providers", draft.providerID], .object(profile))]
+        }
+
+        var operations: [SettingsOperation] = []
+        operations.append(name.isEmpty ? .unset(["providers", draft.providerID, "displayName"])
+                           : .set(["providers", draft.providerID, "displayName"], .string(name)))
+        operations.append(baseURL.isEmpty ? .unset(["providers", draft.providerID, "baseURL"])
+                           : .set(["providers", draft.providerID, "baseURL"], .string(baseURL)))
+        if draft.isCustom, let api = draft.api {
+            operations.append(.set(["providers", draft.providerID, "api"], .string(api.rawValue)))
+        }
+        if draft.modelsEdited {
+            operations.append(.set(["providers", draft.providerID, "models"], .array(draft.modelJSON())))
+        }
+        if keyProvided || referenceIsExplicit {
+            operations.append(.set(["providers", draft.providerID, "apiKeyEnv"], .string(reference)))
+        } else {
+            operations.append(.unset(["providers", draft.providerID, "apiKeyEnv"]))
+        }
+        return operations
+    }
+
+    private func safeProviderError(_ error: Error, secret: String = "") -> String {
+        var message = error.localizedDescription
+        if !secret.isEmpty {
+            message = message.replacingOccurrences(of: secret, with: "••••••")
+        }
+        return message
+    }
+
+    private static func isValidAPIKey(_ value: String) -> Bool {
+        !value.isEmpty && value.unicodeScalars.allSatisfy { (0x21...0x7E).contains($0.value) }
+    }
+
+    private func callHost(
+        _ namespace: String,
+        _ method: String,
+        _ args: JSONValue,
+        timeout: Duration = .seconds(30)
+    ) async throws -> JSONValue {
+        try await bridge.request("host.call", params: .object([
+            "namespace": .string(namespace),
+            "method": .string(method),
+            "args": args
+        ]), timeout: timeout)
     }
 
     func refreshAccount() async {
@@ -1283,7 +1716,12 @@ final class AppModel {
                 errorMessage = args[1]["message"]?.stringValue ?? args[1].stringValue ?? "The agent reported an error."
             }
         case "settings/document-updated", "llm/models-updated", "llm/adapters-updated":
-            Task { await refreshModels() }
+            Task {
+                await refreshProviderSettings()
+                await refreshModels()
+            }
+        case "credentials/reference-updated", "credentials/record-updated":
+            Task { await refreshProviderSettings() }
         case "commands/change":
             Task { await refreshCommands() }
         default:

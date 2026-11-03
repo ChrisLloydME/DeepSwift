@@ -20,7 +20,7 @@ struct SettingsView: View {
             AboutSettingsView()
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
-        .frame(width: 560, height: 430)
+        .frame(width: 780, height: 620)
     }
 }
 
@@ -104,7 +104,7 @@ private struct RuntimeSettingsView: View {
 
             Section("Credentials") {
                 Toggle("Pass provider API key environment variables", isOn: $allowProviderEnv)
-                Text("When enabled, DEEPSEEK_API_KEY, OPENAI_API_KEY, and ANTHROPIC_API_KEY from the app environment are passed to the isolated Host. The app never stores credentials.")
+                Text("When enabled, DEEPSEEK_, OPENAI_, and ANTHROPIC_ environment variables are passed to the isolated Host. Saved API-key credentials are written through the isolated DSH credential store and are never read back into the app.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -200,6 +200,8 @@ private struct ModelSettingsView: View {
                 }
             }
 
+            ProviderSettingsSection()
+
             if let models = model.models, !models.isEmpty {
                 Section("Available Models") {
                     ForEach(models.groups) { group in
@@ -226,7 +228,7 @@ private struct ModelSettingsView: View {
                     ContentUnavailableView(
                         "No Models Available",
                         systemImage: "cpu",
-                        description: Text("Authenticate the isolated DSH profile. Credentials and provider configuration stay in DSH; DeepSwift does not keep its own credential store.")
+                        description: Text("Sign in to DeepSeek Account or configure an API-key provider above. Credentials and provider configuration stay in the isolated DSH profile.")
                     )
                     Button("Refresh Catalog") {
                         Task { await model.refreshModels() }
@@ -248,6 +250,11 @@ private struct ModelSettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
+        .task(id: model.connectionState.isReady) {
+            if model.connectionState.isReady {
+                await model.refreshProviderSettings()
+            }
+        }
     }
 }
 
