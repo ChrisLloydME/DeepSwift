@@ -6,13 +6,19 @@
 import AppKit
 import SwiftUI
 
+/// Trailing inspector for the selected session.
+///
+/// The view is presentation-only: it reads the same `AppModel` as the main
+/// window, uses native `Form`/`Section`/`LabeledContent`, and never owns its
+/// own toolbar state. Visibility is controlled by the window-level
+/// `showInspector` binding.
 struct InspectorView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
         Group {
             if let session = model.selectedSession {
-                List {
+                Form {
                     sessionSection(session)
                     subagentSection(session)
                     workspaceSection(session)
@@ -22,16 +28,18 @@ struct InspectorView: View {
                     terminalSection
                     runtimeSection
                 }
-                .listStyle(.inset)
+                .formStyle(.grouped)
+                .controlSize(.regular)
             } else {
-                ContentUnavailableView(
-                    "No Session Selected",
-                    systemImage: "sidebar.trailing",
-                    description: Text("Select a session to inspect its workspace, model, and runtime state.")
-                )
+                ContentUnavailableView {
+                    Label("No Session Selected", systemImage: "sidebar.trailing")
+                } description: {
+                    Text("Select a session to inspect its workspace, model, and runtime state.")
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, 18)
             }
         }
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private func sessionSection(_ session: SessionSummary) -> some View {
@@ -41,32 +49,39 @@ struct InspectorView: View {
                     .multilineTextAlignment(.trailing)
                     .textSelection(.enabled)
             }
+
             LabeledContent("Status") {
                 HStack(spacing: 5) {
                     Circle()
-                        .fill(session.isRunning ? Color.accentColor : .secondary)
+                        .fill(session.isRunning ? Color.accentColor : Color.secondary)
                         .frame(width: 6, height: 6)
                     Text(session.isRunning ? "Running" : (session.agentAvailable == true ? "Ready" : "Idle"))
                 }
             }
+
             if let date = session.updatedDate {
                 LabeledContent("Updated") {
                     Text(date, format: .dateTime.year().month().day().hour().minute())
                 }
             }
+
             LabeledContent("Preset") {
                 Text(model.conversation.header?.agentPreset ?? "Default")
             }
+
             LabeledContent("Permission") {
                 Text(model.conversation.permissionPreset ?? "Default")
             }
+
             LabeledContent("Identifier") {
                 Text(session.sessionId)
                     .font(.caption.monospaced())
                     .textSelection(.enabled)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .truncationMode(.middle)
+                    .help(session.sessionId)
             }
+
             Button {
                 copy(session.sessionId)
             } label: {
@@ -87,7 +102,7 @@ struct InspectorView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Circle()
-                                .fill(child.isRunning ? Color.accentColor : .secondary)
+                                .fill(child.isRunning ? Color.accentColor : Color.secondary)
                                 .frame(width: 6, height: 6)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(child.displayTitle)
@@ -103,6 +118,7 @@ struct InspectorView: View {
                                 .font(.caption2)
                                 .foregroundStyle(.tertiary)
                         }
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
@@ -117,23 +133,29 @@ struct InspectorView: View {
                     Text(workspace.displayTitle)
                         .multilineTextAlignment(.trailing)
                 }
+
                 LabeledContent("Path") {
                     Text(workspace.abbreviatedPath)
                         .font(.caption)
                         .multilineTextAlignment(.trailing)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
                         .textSelection(.enabled)
                         .help(workspace.path)
                 }
-                Button {
-                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: workspace.path)])
-                } label: {
-                    Label("Reveal in Finder", systemImage: "folder")
-                }
-                .buttonStyle(.borderless)
-                Button {
-                    copy(workspace.path)
-                } label: {
-                    Label("Copy Path", systemImage: "doc.on.doc")
+
+                HStack(spacing: 14) {
+                    Button {
+                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: workspace.path)])
+                    } label: {
+                        Label("Reveal in Finder", systemImage: "folder")
+                    }
+                    Button {
+                        copy(workspace.path)
+                    } label: {
+                        Label("Copy Path", systemImage: "doc.on.doc")
+                    }
+                    Spacer(minLength: 0)
                 }
                 .buttonStyle(.borderless)
             } else if let cwd = session.cwd {
@@ -141,7 +163,10 @@ struct InspectorView: View {
                     Text((cwd as NSString).abbreviatingWithTildeInPath)
                         .font(.caption)
                         .multilineTextAlignment(.trailing)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
                         .textSelection(.enabled)
+                        .help(cwd)
                 }
             } else {
                 Text("No workspace information")
@@ -165,19 +190,21 @@ struct InspectorView: View {
                                 ))
                             }
                         } label: {
-                            HStack {
+                            HStack(spacing: 8) {
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(entry.displayName)
                                     Text(group.name ?? group.id)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
-                                Spacer()
+                                Spacer(minLength: 4)
                                 if entry.id == models.defaultSelection?.model {
                                     Image(systemName: "checkmark")
                                         .foregroundStyle(.secondary)
+                                        .accessibilityLabel("Default model")
                                 }
                             }
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
@@ -198,13 +225,13 @@ struct InspectorView: View {
             Section("Background Jobs") {
                 ForEach(model.jobs) { job in
                     VStack(alignment: .leading, spacing: 3) {
-                        HStack {
+                        HStack(spacing: 6) {
                             Circle()
-                                .fill(job.isActive ? Color.accentColor : .secondary)
+                                .fill(job.isActive ? Color.accentColor : Color.secondary)
                                 .frame(width: 6, height: 6)
                             Text(job.displayLabel)
                                 .lineLimit(1)
-                            Spacer()
+                            Spacer(minLength: 4)
                             if job.isActive {
                                 Button("Stop") {
                                     Task { await model.killJob(job) }
@@ -271,7 +298,10 @@ struct InspectorView: View {
                     Text((home as NSString).abbreviatingWithTildeInPath)
                         .font(.caption)
                         .multilineTextAlignment(.trailing)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
                         .textSelection(.enabled)
+                        .help(home)
                 }
             }
             Button {
