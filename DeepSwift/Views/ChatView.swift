@@ -177,87 +177,221 @@ private struct ModelMenu: View {
     @Environment(AppModel.self) private var model
     let catalog: ModelCatalog
     let selected: ModelSelection?
+    @State private var showPicker = false
 
     var body: some View {
-        Menu {
-            if catalog.groups.allSatisfy({ $0.models.isEmpty }) {
-                Text("No models available for this profile")
-            }
-            ForEach(catalog.groups) { group in
-                Section(group.name ?? group.id) {
-                    ForEach(group.models) { entry in
-                        if let efforts = entry.reasoning?.efforts, !efforts.isEmpty {
-                            Menu(entry.displayName) {
-                                Button {
-                                    select(provider: group.id, model: entry, effort: entry.reasoning?.defaultEffort)
-                                } label: {
-                                    if isSelected(group.id, entry, effort: nil) {
-                                        Label("Default", systemImage: "checkmark")
-                                    } else {
-                                        Text("Default")
-                                    }
-                                }
-                                ForEach(efforts, id: \.id) { effort in
-                                    Button {
-                                        select(provider: group.id, model: entry, effort: effort.id)
-                                    } label: {
-                                        if isSelected(group.id, entry, effort: effort.id) {
-                                            Label(effort.displayName, systemImage: "checkmark")
-                                        } else {
-                                            Text(effort.displayName)
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            Button {
-                                select(provider: group.id, model: entry, effort: entry.reasoning?.defaultEffort)
-                            } label: {
-                                if isSelected(group.id, entry, effort: nil) {
-                                    Label(entry.displayName, systemImage: "checkmark")
-                                } else {
-                                    Text(entry.displayName)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if let failures = catalog.failures, !failures.isEmpty {
-                Divider()
-                Section("Unavailable") {
-                    ForEach(Array(failures.enumerated()), id: \.offset) { _, failure in
-                        Text("\(failure.displayName): \(failure.message ?? "unavailable")")
-                    }
-                }
-            }
+        Button {
+            showPicker = true
         } label: {
             Label(selectedModelName ?? "Model", systemImage: "cpu")
                 .labelStyle(.titleAndIcon)
+                .lineLimit(1)
         }
-        .menuStyle(.borderlessButton)
+        .buttonStyle(.borderless)
         .fixedSize()
-        .help("Select model for this session")
+        .help("Choose a model for this session")
+        .sheet(isPresented: $showPicker) {
+            ModelPickerSheet(catalog: catalog, selected: selected) { selection in
+                Task { await self.model.selectModel(selection) }
+            }
+        }
     }
 
     private var selectedModelName: String? {
         guard let selected else { return nil }
         return catalog.model(for: selected)?.displayName
     }
+}
 
-    private func isSelected(_ provider: String, _ model: ModelCatalog.Group.Model, effort: String?) -> Bool {
-        guard let selected, selected.provider == provider, selected.model == model.id else { return false }
-        if let effort { return selected.reasoningEffort == effort }
-        return selected.reasoningEffort == nil
+private struct ModelRoute: Identifiable {
+    let provider: String
+    let providerName: String
+    let model: ModelCatalog.Group.Model
+
+    var id: String { "\(provider)/\(model.id)" }
+}
+
+private struct ModelPickerSheet: View {
+    let catalog: ModelCatalog
+    let selected: ModelSelection?
+    let onSelect: (ModelSelection) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+    @State private var selection: String?
+    @State private var effort = ""
+
+    init(catalog: ModelCatalog, selected: ModelSelection?, onSelect: @escaping (ModelSelection) -> Void) {
+        self.catalog = catalog
+        self.selected = selected
+        self.onSelect = onSelect
+        _selection = State(initialValue: selected.map { "\($0.provider)/\($0.model)" })
+        _effort = State(initialValue: selected?.reasoningEffort ?? "")
     }
 
-    private func select(provider: String, model: ModelCatalog.Group.Model, effort: String?) {
-        Task {
-            await self.model.selectModel(ModelSelection(
-                provider: provider,
-                model: model.id,
-                reasoningEffort: effort
-            ))
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Choose Model")
+                        .font(.title3.weight(.semibold))
+                    Text("Models are grouped by their DSH provider route.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding(18)
+            Divider()
+
+            TextField("Search models or providers", text: $query)
+                .textFieldStyle(.roundedBorder)
+                .padding(.horizontal, 18)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+
+            if allRoutes.isEmpty {
+                Spacer()
+                ContentUnavailableView {
+                    Label("No Models Available", systemImage: "cpu")
+                } description: {
+                    Text("Configure a provider or sign in to DeepSeek Account in Models settings.")
+                }
+                Spacer()
+            } else {
+                List(selection: $selection) {
+                    ForEach(filteredGroups) { group in
+                        Section(group.name ?? group.id) {
+                            ForEach(group.models) { entry in
+                                let routeID = "\(group.id)/\(entry.id)"
+                                HStack(spacing: 8) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(entry.displayName)
+                                            .lineLimit(1)
+                                        Text(group.name ?? group.id)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                    Spacer(minLength: 8)
+                                    if let efforts = entry.reasoning?.efforts, !efforts.isEmpty {
+                                        Text("\(efforts.count) reasoning levels")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    if routeID == selection {
+                                        Image(systemName: "checkmark")
+                                            .foregroundStyle(.tint)
+                                            .accessibilityLabel("Selected model")
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                                .tag(routeID)
+                            }
+                        }
+                    }
+                    if let failures = catalog.failures, !failures.isEmpty {
+                        Section("Unavailable Providers") {
+                            ForEach(Array(failures.enumerated()), id: \.offset) { _, failure in
+                                Text("\(failure.displayName): \(failure.message ?? "unavailable")")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                .listStyle(.inset)
+            }
+
+            Divider()
+            HStack(alignment: .center, spacing: 12) {
+                if let route = selectedRoute {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(route.model.displayName)
+                            .font(.callout.weight(.medium))
+                        Text(route.providerName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    if let efforts = route.model.reasoning?.efforts, !efforts.isEmpty {
+                        Picker("Reasoning", selection: $effort) {
+                            Text("Default").tag("")
+                            ForEach(efforts, id: \.id) { level in
+                                Text(level.displayName).tag(level.id)
+                            }
+                            if !effort.isEmpty && !efforts.contains(where: { $0.id == effort }) {
+                                Text(effort).tag(effort)
+                            }
+                        }
+                        .fixedSize()
+                    }
+                } else {
+                    Text("Select a model to continue.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("Use Model") {
+                    guard let route = selectedRoute else { return }
+                    let reasoning = route.model.reasoning?.efforts?.isEmpty == false && !effort.isEmpty
+                        ? effort
+                        : route.model.reasoning?.defaultEffort
+                    onSelect(ModelSelection(
+                        provider: route.provider,
+                        model: route.model.id,
+                        reasoningEffort: reasoning
+                    ))
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(selectedRoute == nil)
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding(18)
+        }
+        .frame(width: 680, height: 560)
+        .onChange(of: selection) {
+            updateEffortForSelection()
+        }
+    }
+
+    private var allRoutes: [ModelRoute] {
+        catalog.groups.flatMap { group in
+            group.models.map { ModelRoute(provider: group.id, providerName: group.name ?? group.id, model: $0) }
+        }
+    }
+
+    private var filteredGroups: [ModelCatalog.Group] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else { return catalog.groups }
+        return catalog.groups.compactMap { group in
+            let models = group.models.filter { entry in
+                entry.id.localizedCaseInsensitiveContains(needle)
+                    || entry.displayName.localizedCaseInsensitiveContains(needle)
+                    || (group.name ?? group.id).localizedCaseInsensitiveContains(needle)
+            }
+            guard !models.isEmpty else { return nil }
+            return ModelCatalog.Group(id: group.id, name: group.name, models: models)
+        }
+    }
+
+    private var selectedRoute: ModelRoute? {
+        allRoutes.first { $0.id == selection }
+    }
+
+    private func updateEffortForSelection() {
+        guard let route = selectedRoute else {
+            effort = ""
+            return
+        }
+        if let selected,
+           selected.provider == route.provider,
+           selected.model == route.model.id {
+            effort = selected.reasoningEffort ?? ""
+        } else {
+            effort = ""
         }
     }
 }
@@ -341,3 +475,33 @@ private struct LiveAssistantView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
+
+#if DEBUG
+#Preview("Model Picker — Large Catalog") {
+    let groups = (0..<4).map { groupIndex in
+        ModelCatalog.Group(
+            id: "provider-\(groupIndex)",
+            name: "Provider \(groupIndex + 1)",
+            models: (0..<20).map { modelIndex in
+                ModelCatalog.Group.Model(
+                    id: "model-\(groupIndex)-\(modelIndex)",
+                    name: "Model \(groupIndex + 1).\(modelIndex + 1) with a representative display name",
+                    reasoning: modelIndex.isMultiple(of: 3)
+                        ? .init(defaultEffort: "medium", efforts: [
+                            .init(id: "low", name: "Low", description: nil),
+                            .init(id: "medium", name: "Medium", description: nil),
+                            .init(id: "high", name: "High", description: nil)
+                        ])
+                        : nil,
+                    available: true
+                )
+            }
+        )
+    }
+    ModelPickerSheet(
+        catalog: ModelCatalog(defaultSelection: nil, groups: groups, failures: nil),
+        selected: nil,
+        onSelect: { _ in }
+    )
+}
+#endif
