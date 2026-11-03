@@ -76,6 +76,13 @@ confined to `Bridge/src/connection.mjs` and `Bridge/src/main.mjs`.
 | `session/follow` (stream) | `{request:{address,activate?,assistantStream?,maxMessages?,turnWindow?}}` | Opening snapshot + live durable events + assistant deltas |
 | `session/control` (stream) | `{}` | Cross-session projection baseline/changes |
 | `session/modelCatalog` | `{}` | Provider-grouped routable models |
+| `settings/describe` | `{}` | Redacted settings values, schemas, revisions, and secret slots |
+| `settings/mutate` | `{ns,ops,expectedRevision?}` | Path-addressed provider-settings writes |
+| `credentials/describe` | `{refs}` | Redacted credential status and source; never values |
+| `credentials/set` | `{ref,value}` | Write-only API-key storage in the isolated DSH profile |
+| `credentials/unset` | `{ref}` | Remove a stored credential reference |
+| `llm/listConfigurableProviders` | `{}` | Installed/custom provider directory and native-auth metadata |
+| `llm/discoverModels` | `{settingsNs,request}` | Installed-catalog or endpoint model discovery |
 | `session/selectModel` | `{request:{sessionId,provider,model,reasoningEffort?}}` | Session model selection |
 | `session/search` | `{request:{query}}` | Durable message-content search |
 | `commands/list` | `{agentId}` | Effective slash-command descriptors |

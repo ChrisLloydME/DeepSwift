@@ -52,6 +52,21 @@ environment variables**. In that case only variables matching
 `DEEPSEEK_*`, `OPENAI_*`, or `ANTHROPIC_*` are copied. They are never written to
 disk by DeepSwift.
 
+## Provider credentials
+
+DeepSwift does not implement a Swift credential database and does not copy
+provider keys into Keychain. API keys entered in Models settings are written
+through the official DSH credentials service into the **isolated profile's**
+DSH-managed credential store (`.credentials.yaml` under the isolated home).
+The Host returns only redacted status (`configured`, `source`, `writable`) and
+never returns the stored value. Removing a provider or credential is done
+through the official settings and credentials APIs as well.
+
+Custom providers may name a credential reference directly. When that reference
+is supplied only by the launching environment, the Runtime setting controls
+whether the three allowed provider prefixes are passed; stored credentials
+always take precedence over the environment inside DSH.
+
 ## Runtime installation
 
 `Scripts/prepare-dev-runtime.sh`:

@@ -124,6 +124,37 @@ The app uses these official namespaces:
 - `account` — state, browser sign-in start/cancel, sign-out, profile
 - `$events` — forwarded events and approval/user-question waterfalls
 
+## Provider settings and BYOK
+
+Provider configuration is a projection of the official Host, not a second
+configuration database:
+
+- `llm/listConfigurableProviders` supplies the installed provider directory,
+  including native-auth hints and custom routes declared by settings.
+- `settings/describe` supplies redacted namespace values, user overrides,
+  secret-slot state, and revisions.
+- `settings/mutate` applies path-addressed operations with the observed
+  revision, so unrelated providers and unknown fields survive edits.
+- `credentials/describe` supplies only `configured`, `source`, and `writable`.
+  `credentials/set` is the only value-bearing direction; the value is never
+  retained by `AppModel` or returned by the Host.
+- `llm/discoverModels` returns candidate model metadata. Discovery is optional;
+  the editor also accepts manual identifiers, and a partial endpoint response
+  never removes existing model entries.
+- `session/modelCatalog` remains the sole source for the conversation model
+  picker. Adding or changing a provider triggers a fresh catalog read, so the
+  picker and settings page agree.
+
+The native Models page separates DeepSeek Account, the direct DeepSeek API-key
+route, installed pi-ai providers, and custom pi-ai routes. Provider IDs are
+stable; custom IDs are immutable after creation because they are the settings
+key, request route, and credential-reference stem. API keys are entered with
+`SecureField` and can be revealed only for the current unsaved draft.
+
+Only `llm-pi-ai` routes can be hand-declared; the direct `llm-deepseek` route
+is a composition fact and is edited rather than created. Account sign-in and
+API-key authentication remain distinct routes and catalog groups.
+
 ## Concurrency and lifecycle
 
 - Swift UI state is `@MainActor`; transport is an actor.

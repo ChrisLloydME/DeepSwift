@@ -21,7 +21,8 @@ repository contains no second Agent engine and no WebView or React surface.
 | Tools | Implemented | Generic native tool card with per-tool icon/summary, collapsible arguments/output, errors and completion |
 | Approvals | Implemented | Official Agent-scoped approval waterfall; Allow Once / Reject; fail-closed |
 | User questions | Implemented | Native question sheet with options, multi-select, free text, plan-review detail |
-| Model selection | Implemented | Official model catalog and session model selection |
+| Model selection | Implemented | Official provider-grouped catalog, reasoning efforts, session model selection, and explicit unavailable-model state |
+| Model providers / BYOK | Implemented | Official provider directory and settings APIs; DeepSeek API key, installed pi-ai providers, custom OpenAI- and Anthropic-compatible routes; official model discovery; write-only DSH credentials |
 | Account sign-in | Partial | Official browser OAuth start/cancel/sign-out wired; completion requires a real account and was not automated |
 | Workspace files | Implemented | Host-enforced directory listing, text/code preview, copy, open externally |
 | Search | Partial | Official `session/search` wired; no dedicated UI test yet |
@@ -31,7 +32,7 @@ repository contains no second Agent engine and no WebView or React surface.
 | Diff / image / PDF preview | Not implemented | File preview reports a safe fallback for non-text files |
 | Packaging / bundled Node | Not implemented | Development uses an isolated project-local runtime; see Phase 5 notes |
 | Plugin/skill settings UI | Not implemented | Host plugin management remains available through DSH itself |
-| UI tests | Placeholder | Unit and bridge tests are real; XCUITest coverage is not yet written |
+| UI tests | Implemented | Launch, Inspector, and Models provider-directory/editor flows |
 
 Unsupported features are shown as unavailable rather than silently substituted.
 
