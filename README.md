@@ -22,18 +22,18 @@ repository contains no second Agent engine and no WebView or React surface.
 | Approvals | Implemented | Official Agent-scoped approval waterfall; Allow Once / Reject; fail-closed |
 | User questions | Implemented | Native question sheet with options, multi-select, free text, plan-review detail |
 | Model selection | Implemented | Official provider-grouped catalog, reasoning efforts, session model selection, explicit unavailable-model state, and a bounded searchable picker sheet |
-| OpenCode Go | Implemented | Installed mixed-protocol catalog preserved; live OpenCode metadata inspection; stale route overrides can be reset |
+| OpenCode Go | Implemented and live-verified | Installed mixed-protocol catalog preserved; live metadata inspection; stale route overrides reset; minimal real inference and tool turn verified |
 | Model providers / BYOK | Implemented | Official provider directory and settings APIs; DeepSeek API key, installed pi-ai providers, custom OpenAI- and Anthropic-compatible routes; official model discovery; write-only DSH credentials |
 | Account sign-in | Partial | Official browser OAuth start/cancel/sign-out wired; completion requires a real account and was not automated |
-| Workspace files | Implemented | Host-enforced directory listing, text/code preview, copy, open externally |
-| Search | Partial | Official `session/search` wired; no dedicated UI test yet |
-| Background jobs | Partial | Official job list stream and human kill are wired; no dedicated UI test yet |
-| Subagents | Partial | Listed and read-only conversation browsing; no subagent steering |
-| Terminal | Not implemented | Deliberately absent rather than bypassing DSH with an uncontrolled shell |
-| Diff / image / PDF preview | Not implemented | File preview reports a safe fallback for non-text files |
-| Packaging / bundled Node | Not implemented | Development uses an isolated project-local runtime; see Phase 5 notes |
+| Workspace files | Implemented | Host-enforced directory listing, syntax-highlighted source preview, zoomable images, PDFKit previews, copy, open externally |
+| Changed files / diff | Implemented | Live-turn summary card and native unified diff viewer with per-file navigation |
+| Terminal | Implemented | Official DSH terminal controller through a vendored SwiftTerm framework; attach/input/resize/exit and retained sessions |
+| Search | Partial | Official `session/search` wired; no automated integration verification |
+| Background jobs | Partial | Official job list stream and human kill are wired; no dedicated detail window |
+| Subagents | Partial | Listed and read-only conversation browsing; no steering/creation controls |
+| Packaging / bundled Node | Implemented scripts | Release script embeds self-contained Node, bridge, and pinned DSH; signing/notarization needs external credentials |
 | Plugin/skill settings UI | Not implemented | Host plugin management remains available through DSH itself |
-| UI tests | Implemented | Launch, Inspector, and Models provider-directory/editor flows |
+| UI tests | Retained, not default | Legacy end-to-end tests; work verification uses unit, Node, Host, and preview checks |
 
 Unsupported features are shown as unavailable rather than silently substituted.
 
@@ -60,14 +60,29 @@ DeepSwift never reads or writes `~/.dsh`, never updates a global DSH install,
 and never changes global npm configuration. See
 [Runtime Isolation](Docs/runtime-isolation.md).
 
+### Standalone packaging
+
+```sh
+Scripts/prepare-node-runtime.sh
+Scripts/build-release.sh
+```
+
+`prepare-node-runtime.sh` downloads an official self-contained Node.js build
+with checksum verification into `.local/node`. `build-release.sh` creates a
+Release app, copies Node, the bridge, and the pinned DSH graph into
+`Contents/Resources`, and emits a zipped app. Set
+`DEEPSWIFT_CODESIGN_IDENTITY` to a Developer ID identity for distribution, then
+run `Scripts/notarize.sh` with Apple notary credentials. See
+[Runtime Isolation](Docs/runtime-isolation.md#packaged-runtime).
+
 ### Sandboxing note
 
-The Debug target currently has App Sandbox disabled. A development build
-launches a user-installed Node runtime and reads project-local development
-files; a sandboxed build would need the runtime and profile inside an app
-container or an explicit bundled-runtime design. This is a development
-configuration, not a claim that a sandboxed distribution is ready. Hardened
-Runtime remains enabled, and no privileged helper is used.
+The Debug target keeps App Sandbox disabled because its development workflow
+uses a project-local Node runtime and profile. The packaged runtime layout is
+implemented and launch-verified outside App Sandbox; an App Store sandboxed
+distribution would require a container-specific runtime/profile migration and
+is not claimed. Hardened Runtime remains enabled, and no privileged helper is
+used.
 
 ## Runtime setup and credentials
 
@@ -82,7 +97,9 @@ projection. Alternatively, for development only, enable
 **Settings › Runtime › Pass provider API key environment variables** and export
 `DEEPSEEK_API_KEY` in the launching environment.
 
-No API key is written by this app, and no test sends a paid model request.
+No API key is written by this app. Routine unit and Node tests use mocks or
+fixtures. A narrowly scoped, manually run OpenCode Go integration check used a
+minimal real inference request; it is not part of the automated test suite.
 
 ## Verification
 
@@ -101,7 +118,7 @@ pagination, runtime isolation, and prompt/approval request shapes.
 - [Protocol compatibility](Docs/protocol-compatibility.md)
 - [Runtime isolation](Docs/runtime-isolation.md)
 - [Third-party notices](Docs/third-party-notices.md)
-- [Feature coverage and limitations](#what-works)
+- [Feature coverage and limitations](Docs/feature-coverage.md)
 
 ## Repository layout
 
@@ -114,7 +131,8 @@ DeepSwift/               SwiftUI application target
   Services/              Bridge client and runtime configuration
   Views/                 Native views
 DeepSwiftTests/          Swift Testing suites
-Scripts/                 Isolated development runtime helpers
+Scripts/                 Isolated runtime, packaging, signing, and test helpers
+SwiftTerm/                Vendored SwiftTerm 1.2.5 framework (MIT)
 Docs/                    Architecture and compatibility documentation
 .local/                  Disposable local runtime, profiles, logs (ignored)
 ```

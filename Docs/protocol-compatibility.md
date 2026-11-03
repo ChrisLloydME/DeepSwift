@@ -91,6 +91,16 @@ confined to `Bridge/src/connection.mjs` and `Bridge/src/main.mjs`.
 | `job/kill` | `{request:{sessionId,jobId}}` | Human cancellation of a job |
 | `workspaceFiles/list` | `{workspaceFileScopeId,path}` | Workspace directory entries |
 | `workspaceFiles/read` | `{workspaceFileScopeId,path,range:{offset,limit}}` | Text file page |
+| `workspaceFiles/readBytes` | `{workspaceFileScopeId,path,options}` | Native file bytes; the Host answers with the official multipart binary envelope |
+| `terminal/list` | `{sessionId}` | Retained terminals for a Session |
+| `terminal/create` | `{agentId,request:{id,cols,rows,shellPath?}}` | Open a Host-owned PTY |
+| `terminal/attach` (stream) | `{agentId,id}` | Snapshot + ANSI output downlink; typed input/resize uplink |
+| `terminal/close` | `{agentId,id}` | Terminate the complete provider-owned process range |
+| `terminal/environment` | `{agentId}` | Current directory and terminal limits |
+| `terminal/shells` | `{agentId}` | Discover verified shells |
+| `permissionPresets/catalog` | `{}` | Selectable permission presets and default |
+| `/api/changes.summary` | GET `sessionId,seq` | Per-turn changed-file summary |
+| `/api/changes.diff` | GET `sessionId,seq,index` | Unified comparison for one listed file |
 | `account/getState` | `{}` | Safe account projection |
 | `account/startSignIn` | `{client,callbackOrigin,loginSource}` | Browser OAuth attempt |
 | `account/cancelSignIn` | `{attemptId}` | Cancel a local attempt |
@@ -98,6 +108,24 @@ confined to `Bridge/src/connection.mjs` and `Bridge/src/main.mjs`.
 | `account/getProfile` | `{client}` | Display-safe profile |
 | `$events` (stream) | `{args:{}}` | Forwarded emits and waterfalls |
 | `$events/result` | `{args:{clientId,eventId,outcome}}` | Waterfall reply |
+
+### Bridge byte and HTTP adapters
+
+`workspaceFiles/readBytes` is a byte-bearing unary Remote. The official client
+Connection parses a `multipart/form-data` body whose `metadata` part carries the
+normal `server-response` envelope and whose other parts satisfy `bytes`
+attachments. `HostConnection.rpcBinary` implements that decoding and the bridge
+exposes the result as base64 through `workspace.readBytes`; Swift never guesses
+a binary encoding or reads the path directly.
+
+`/api/changes.summary` and `/api/changes.diff` are authenticated Host HTTP
+routes, not Remote namespaces. The bridge exposes narrow `workspace.changes*`
+methods rather than a generic arbitrary-URL proxy.
+
+The terminal bridge uses the existing generic `stream.open`/`stream.send`
+carrier. SwiftTerm owns only VT parsing/rendering and keyboard translation; the
+Host owns the PTY, process, input sequence, and close semantics. The command
+`/permission <preset>` is the official write path for permission changes.
 
 ### OpenCode Go compatibility
 

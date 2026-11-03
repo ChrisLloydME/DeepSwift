@@ -120,8 +120,13 @@ The app uses these official namespaces:
   catalog/selection, search
 - `session/control` — all-session projection baseline/changes
 - `job` — per-session list stream and human kill
-- `workspaceFiles` — list/read text files
+- `workspaceFiles` — directory listing, paged text, and native bytes
+- `terminal` — list/create/attach/close for Host-owned PTYs
+- `permissionPresets` — selectable presets; switching uses the official
+  `/permission` command
 - `account` — state, browser sign-in start/cancel, sign-out, profile
+- `/api/changes.summary` and `/api/changes.diff` — authenticated changed-file
+  summaries and comparisons
 - `$events` — forwarded events and approval/user-question waterfalls
 
 ## Provider settings and BYOK
@@ -163,6 +168,26 @@ Only `llm-pi-ai` routes can be hand-declared; the direct `llm-deepseek` route
 is a composition fact and is edited rather than created. Account sign-in and
 API-key authentication remain distinct routes and catalog groups.
 
+## Files, changes, and terminal
+
+- File listings and text reads remain Host-scoped. `workspaceFiles/readBytes`
+  returns the official multipart binary envelope; the bridge decodes it into
+  base64 so Swift can render PNG/JPEG/GIF/WebP images and PDFs without direct
+  `FileManager` access.
+- Text preview is a native scroll view with a line gutter and lightweight
+  syntax highlighting. It is a viewer, not an editor.
+- `workspace/changes` events carry only a turn number. The Host's authenticated
+  `/api/changes.summary` and `/api/changes.diff` routes provide the files and
+  unified hunks. The app folds the latest live announcement into a card and a
+  bounded review sheet. Summaries do not survive a Host restart.
+- Terminal processes are owned by the Host terminal controller. `SwiftTerm`
+  is a separate dynamic framework linked into the app and embedded in
+  `Contents/Frameworks`; it only parses VT sequences and translates keyboard
+  input. Terminal stream IDs are unique per attachment, and a snapshot resets
+  the emulator before incremental output is applied.
+- Permission presets use `/permission <preset>`; the app does not write the
+  sandbox or approval knobs directly.
+
 ## Concurrency and lifecycle
 
 - Swift UI state is `@MainActor`; transport is an actor.
@@ -200,6 +225,11 @@ API-key authentication remain distinct routes and catalog groups.
   unknown tools remain renderable.
 - Markdown uses `AttributedString` for inline formatting, with explicit native
   blocks for fenced code and pipe tables.
+- SwiftTerm's upstream `Color` type is renamed `TerminalColor` only inside the
+  vendored framework to avoid colliding with SwiftUI `Color`; the terminal
+  surface itself is an AppKit `NSView` bridged through `NSViewRepresentable`.
+- The app uses a single `Window` scene so one process owns one runtime and one
+  Host. Settings is a separate native scene.
 
 ## Deliberate exclusions
 
