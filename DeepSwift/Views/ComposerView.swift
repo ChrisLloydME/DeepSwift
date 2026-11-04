@@ -88,17 +88,12 @@ struct ComposerView: View {
             .padding(.horizontal, 12)
             .padding(.bottom, 8)
         }
-        .background(.quaternary.opacity(0.22), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(.separator, lineWidth: 1)
-        }
+        .modifier(ComposerGlassSurface())
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
-        .background(.bar)
         .overlay {
             if isDropTargeted {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
                     .padding(.horizontal, 20)
                     .padding(.vertical, 12)
@@ -197,6 +192,41 @@ struct ComposerView: View {
         let hasText = !model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         guard hasText || !model.attachments.isEmpty else { return }
         Task { await model.sendMessage() }
+    }
+}
+
+/// Native Liquid Glass surface on macOS 26+, with a material fallback for the
+/// macOS 15 deployment target. The AppKit editor remains inside the glass; its
+/// background is transparent and its IME/selection behavior is unchanged.
+private struct ComposerGlassSurface: ViewModifier {
+    @Environment(\.colorScheme) private var colorScheme
+    private let shape = RoundedRectangle(cornerRadius: 24, style: .continuous)
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            GlassEffectContainer(spacing: 12) {
+                content
+                    .contentShape(shape)
+                    .glassEffect(.regular.interactive(), in: shape)
+                    .overlay {
+                        shape
+                            .strokeBorder(
+                                Color.white.opacity(colorScheme == .dark ? 0.16 : 0.48),
+                                lineWidth: 0.8
+                            )
+                            .allowsHitTesting(false)
+                    }
+            }
+        } else {
+            content
+                .background(.regularMaterial, in: shape)
+                .overlay {
+                    shape.strokeBorder(.separator.opacity(0.65), lineWidth: 1)
+                        .allowsHitTesting(false)
+                }
+                .clipShape(shape)
+        }
     }
 }
 
@@ -318,3 +348,23 @@ struct ComposerTextView: NSViewRepresentable {
         }
     }
 }
+
+#if DEBUG
+#Preview("Liquid Glass Composer") {
+    let model = PreviewData.model()
+    return VStack {
+        Spacer()
+        ComposerView()
+    }
+    .environment(model)
+    .padding(32)
+    .frame(width: 820, height: 260)
+    .background(
+        LinearGradient(
+            colors: [Color.blue.opacity(0.18), Color.purple.opacity(0.13), Color.clear],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    )
+}
+#endif
