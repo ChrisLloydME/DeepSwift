@@ -7,3 +7,7 @@ Bridge/node_modules/
 
 # Xcode personal settings
 xcuserdata/
+
+# Swift Package build products
+Packages/**/.build/
+Packages/**/.swiftpm/
