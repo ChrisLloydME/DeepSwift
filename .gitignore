@@ -4,3 +4,6 @@
 .DS_Store
 Bridge/node_modules/
 *.xcuserstate
+
+# Xcode personal settings
+xcuserdata/
