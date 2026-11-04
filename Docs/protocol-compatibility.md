@@ -220,6 +220,18 @@ Deliberately ignored or summarized:
 This avoids inventing semantics for DSH presentation surfaces that are not part
 of the stable session vocabulary.
 
+## Bridge frame boundary
+
+Stdout is newline-delimited. Readability callback bytes feed one ordered stream
+and one `BridgeFrameBuffer`; the application never spawns one parsing task per
+callback. A split frame is retained until its newline, multiple frames in one
+read are processed in order, and an unterminated frame is capped at 64 MiB.
+Malformed frames produce a bounded `bridge.malformed` event containing only a
+code, byte count, and decoder category. If a valid JSON frame exposes a
+top-level string `id`, that pending request is failed immediately with a
+protocol error; the raw frame is never used as an alert or copied into
+diagnostics.
+
 ## Known unsupported upstream surfaces
 
 | Surface | Status | Fallback |

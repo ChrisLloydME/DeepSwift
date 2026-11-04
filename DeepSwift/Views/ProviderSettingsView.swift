@@ -109,7 +109,8 @@ struct ProviderSettingsSection: View {
                         try await model.removeProvider(row)
                         actionError = nil
                     } catch {
-                        actionError = error.localizedDescription
+                        actionError = AppErrorPresentationFactory.summary(error.localizedDescription)
+                            ?? "The provider could not be removed."
                     }
                 }
             }
@@ -292,7 +293,8 @@ private struct ProviderEditorSheet: View {
                         try await model.restoreOpenCodeGoCatalog()
                         dismiss()
                     } catch {
-                        errorText = error.localizedDescription
+                        errorText = AppErrorPresentationFactory.summary(error.localizedDescription)
+                            ?? "The provider settings request did not complete."
                     }
                 }
             }
@@ -328,7 +330,8 @@ private struct ProviderEditorSheet: View {
                         try await model.removeCredential(reference: reference)
                         errorText = nil
                     } catch {
-                        errorText = error.localizedDescription
+                        errorText = AppErrorPresentationFactory.summary(error.localizedDescription)
+                            ?? "The provider settings request did not complete."
                     }
                 }
             }
@@ -632,7 +635,8 @@ private struct ProviderEditorSheet: View {
                 dismiss()
             } catch {
                 isSaving = false
-                errorText = error.localizedDescription
+                errorText = AppErrorPresentationFactory.summary(error.localizedDescription)
+                ?? "The provider settings request did not complete."
             }
         }
     }
@@ -956,7 +960,8 @@ private struct ModelDiscoverySheet: View {
             isLoading = false
         } catch {
             isLoading = false
-            errorText = error.localizedDescription
+            errorText = AppErrorPresentationFactory.summary(error.localizedDescription)
+                ?? "The provider settings request did not complete."
         }
     }
 }
@@ -1116,7 +1121,8 @@ private struct OpenCodeGoCatalogSheet: View {
             catalog = result
             isLoading = false
         } catch {
-            errorText = error.localizedDescription
+            errorText = AppErrorPresentationFactory.summary(error.localizedDescription)
+                ?? "The provider settings request did not complete."
             isLoading = false
         }
     }

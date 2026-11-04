@@ -35,8 +35,12 @@ actor BridgeClient: DSHBridgeService {
     private var stdoutHandle: FileHandle?
     private var stderrHandle: FileHandle?
     private var pending: [String: PendingRequest] = [:]
-    private var stdoutBuffer = Data()
+    private var stdoutBuffer = BridgeFrameBuffer()
     private var stderrText = ""
+    private var stdoutReaderTask: Task<Void, Never>?
+    private var stderrReaderTask: Task<Void, Never>?
+    private var stdoutContinuation: AsyncStream<Data>.Continuation?
+    private var stderrContinuation: AsyncStream<Data>.Continuation?
     private var stopping = false
     private let logger = Logger(subsystem: "com.lloydME.DeepSwift", category: "BridgeClient")
 
@@ -104,17 +108,6 @@ actor BridgeClient: DSHBridgeService {
         stdinHandle = stdinPipe.fileHandleForWriting
         stdoutHandle = stdoutPipe.fileHandleForReading
         stderrHandle = stderrPipe.fileHandleForReading
-
-        stdoutPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            Task { await self?.ingestStdout(data) }
-        }
-        stderrPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            let data = handle.availableData
-            guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
-            Task { await self?.ingestStderr(text) }
-        }
         process.terminationHandler = { [weak self] process in
             Task { await self?.handleTermination(process) }
         }
@@ -129,6 +122,58 @@ actor BridgeClient: DSHBridgeService {
         }
         self.process = process
         logger.info("Bridge launched pid \(process.processIdentifier, privacy: .public)")
+
+        // Readability callbacks can arrive on different queues. Feed their
+        // bytes into one ordered stream and consume that stream from a single
+        // task, rather than spawning a task per callback (which can reorder a
+        // large frame).
+        let (stdoutStream, stdoutContinuation) = AsyncStream<Data>.makeStream(
+            bufferingPolicy: .unbounded
+        )
+        let (stderrStream, stderrContinuation) = AsyncStream<Data>.makeStream(
+            bufferingPolicy: .unbounded
+        )
+        self.stdoutContinuation = stdoutContinuation
+        self.stderrContinuation = stderrContinuation
+        let stdoutReadLock = NSLock()
+        let stderrReadLock = NSLock()
+
+        stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
+            stdoutReadLock.lock()
+            defer { stdoutReadLock.unlock() }
+            let data = handle.availableData
+            if data.isEmpty {
+                stdoutContinuation.finish()
+                handle.readabilityHandler = nil
+            } else {
+                stdoutContinuation.yield(data)
+            }
+        }
+        stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+            stderrReadLock.lock()
+            defer { stderrReadLock.unlock() }
+            let data = handle.availableData
+            if data.isEmpty {
+                stderrContinuation.finish()
+                handle.readabilityHandler = nil
+            } else {
+                stderrContinuation.yield(data)
+            }
+        }
+
+        stdoutReaderTask = Task.detached(priority: .userInitiated) { [weak self] in
+            for await data in stdoutStream {
+                guard !Task.isCancelled else { return }
+                await self?.ingestStdout(data)
+            }
+        }
+        stderrReaderTask = Task.detached(priority: .utility) { [weak self] in
+            for await data in stderrStream {
+                guard !Task.isCancelled else { return }
+                let text = String(decoding: data, as: UTF8.self)
+                await self?.ingestStderr(text)
+            }
+        }
     }
 
     func request(_ method: String, params: JSONValue = .object([:]), timeout: Duration = .seconds(30)) async throws -> JSONValue {
@@ -178,50 +223,68 @@ actor BridgeClient: DSHBridgeService {
         }
         finishProcess(error: BridgeClientError.transportClosed("The bridge stopped."))
         self.process = nil
+        stdoutReaderTask?.cancel()
+        stderrReaderTask?.cancel()
+        stdoutReaderTask = nil
+        stderrReaderTask = nil
+        stdoutContinuation?.finish()
+        stderrContinuation?.finish()
+        stdoutContinuation = nil
+        stderrContinuation = nil
         stdinHandle = nil
         stdoutHandle?.readabilityHandler = nil
         stderrHandle?.readabilityHandler = nil
+        stdoutHandle?.closeFile()
+        stderrHandle?.closeFile()
         stdoutHandle = nil
         stderrHandle = nil
-        stdoutBuffer.removeAll(keepingCapacity: false)
+        stdoutBuffer.reset()
         stopping = false
     }
 
     // MARK: - Inbound
 
     private func ingestStdout(_ data: Data) {
-        stdoutBuffer.append(data)
-        while let newline = stdoutBuffer.firstIndex(of: 0x0A) {
-            let line = stdoutBuffer[..<newline]
-            stdoutBuffer.removeSubrange(...newline)
-            guard !line.isEmpty else { continue }
-            handle(line: Data(line))
+        for line in stdoutBuffer.append(data) {
+            handle(line: line)
         }
         // A malformed or non-newline-terminated frame must not grow forever.
-        if stdoutBuffer.count > 64 * 1024 * 1024 {
-            stdoutBuffer.removeAll(keepingCapacity: false)
+        // The frame itself is discarded; only its size is reported.
+        if let byteCount = stdoutBuffer.discardOversizedFrame() {
             notificationContinuation.yield(BridgeNotification(
                 event: "bridge.malformed",
-                data: .string("The bridge emitted an oversized frame.")
+                data: .object([
+                    "code": .string("bridge/frame-too-large"),
+                    "message": .string("The local runtime emitted an oversized protocol frame."),
+                    "bytes": .number(Double(byteCount))
+                ])
             ))
         }
     }
 
     private func handle(line: Data) {
-        struct Inbound: Decodable {
-            let id: String?
-            let result: JSONValue?
-            let error: BridgeResponseError?
-            let event: String?
-            let data: JSONValue?
-        }
-        let inbound: Inbound
+        let inbound: BridgeInboundEnvelope
         do {
-            inbound = try JSONDecoder().decode(Inbound.self, from: line)
+            inbound = try JSONDecoder().decode(BridgeInboundEnvelope.self, from: line)
         } catch {
+            // A valid JSON document can still expose a trustworthy top-level
+            // string id. If it does, fail exactly that request now instead of
+            // leaving it pending until its timeout. Never grep the raw text for
+            // an id: only a parsed JSON field is considered reliable.
+            if let id = Self.topLevelID(in: line), let request = pending.removeValue(forKey: id) {
+                request.timeoutTask.cancel()
+                request.continuation.resume(throwing: BridgeClientError.protocolViolation(
+                    "The local runtime returned a response that could not be decoded."
+                ))
+            }
             notificationContinuation.yield(BridgeNotification(
                 event: "bridge.malformed",
-                data: .string(String(data: line, encoding: .utf8) ?? "Unreadable bridge frame")
+                data: .object([
+                    "code": .string("bridge/frame-decode"),
+                    "message": .string("The local runtime returned a response DeepSwift could not decode."),
+                    "bytes": .number(Double(line.count)),
+                    "reason": .string(Self.decodingReason(error))
+                ])
             ))
             return
         }
@@ -242,6 +305,36 @@ actor BridgeClient: DSHBridgeService {
         }
     }
 
+    /// Parses only the top-level `id` field. Returns nil unless the JSON parses
+    /// and `id` is a string. No substring matching or payload retention.
+    private static func topLevelID(in line: Data) -> String? {
+        struct IDProbe: Decodable { let id: String? }
+        return (try? JSONDecoder().decode(IDProbe.self, from: line))?.id
+    }
+
+    private static func decodingReason(_ error: Error) -> String {
+        guard let decoding = error as? DecodingError else {
+            return "The frame was not valid protocol JSON."
+        }
+        switch decoding {
+        case let .keyNotFound(key, context):
+            return "Missing \(Self.codingPath(context.codingPath + [key]))"
+        case let .typeMismatch(_, context):
+            return "Unexpected type at \(Self.codingPath(context.codingPath))"
+        case let .valueNotFound(_, context):
+            return "Missing value at \(Self.codingPath(context.codingPath))"
+        case .dataCorrupted:
+            return "Malformed JSON value"
+        @unknown default:
+            return "The frame was not valid protocol JSON."
+        }
+    }
+
+    private static func codingPath(_ path: [CodingKey]) -> String {
+        guard !path.isEmpty else { return "the frame root" }
+        return path.map(\.stringValue).joined(separator: ".")
+    }
+
     private func ingestStderr(_ text: String) {
         stderrText.append(text)
         if stderrText.count > 64_000 {
@@ -258,14 +351,28 @@ actor BridgeClient: DSHBridgeService {
 
     private func handleTermination(_ process: Process) {
         guard self.process === process else { return }
-        let detail = stderrText.isEmpty ? "" : "\n\(stderrText.suffix(2_000))"
+        let safeTail = AppErrorPresentationFactory.sanitizedDetails(
+            String(stderrText.suffix(4_000)),
+            limit: 2_000
+        ) ?? ""
+        let detail = safeTail.isEmpty ? "" : "\n\(safeTail)"
         finishProcess(error: BridgeClientError.transportClosed(
             "The local DSH bridge exited with status \(process.terminationStatus).\(detail)"
         ))
         self.process = nil
+        stdoutReaderTask?.cancel()
+        stderrReaderTask?.cancel()
+        stdoutReaderTask = nil
+        stderrReaderTask = nil
+        stdoutContinuation?.finish()
+        stderrContinuation?.finish()
+        stdoutContinuation = nil
+        stderrContinuation = nil
         stdinHandle = nil
         stdoutHandle?.readabilityHandler = nil
         stderrHandle?.readabilityHandler = nil
+        stdoutHandle?.closeFile()
+        stderrHandle?.closeFile()
         stdoutHandle = nil
         stderrHandle = nil
         let wasStopping = stopping

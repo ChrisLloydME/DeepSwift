@@ -221,6 +221,15 @@ API-key authentication remain distinct routes and catalog groups.
   replaced by SwiftUI updates, preserving CJK input methods.
 - Native `NSOpenPanel` for workspaces and image attachments.
 - Semantic colors and materials for Light/Dark Mode.
+- Runtime and protocol failures cross a single sanitized error boundary. Alerts
+  contain only a bounded title/message/recovery; technical diagnostics are
+  optional, redacted, size-limited, and shown in a separate bounded native
+  sheet with Copy Diagnostics. Raw frames and settings documents never enter
+  the alert path.
+- Bridge stdout is drained through one ordered stream and a newline frame
+  buffer. Readability callbacks never spawn independent, reorderable parsing
+  tasks; a malformed frame with a parsed top-level request id fails that
+  request immediately instead of leaving it pending.
 - Tool cards use a generic renderer with tool-specific display names/icons;
   unknown tools remain renderable.
 - Conversation Markdown uses the pinned **MarkdownView 3.0.0** package for

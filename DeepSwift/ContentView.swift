@@ -111,13 +111,40 @@ struct ContentView: View {
             }
             return .systemAction
         })
-        .alert("DeepSwift", isPresented: Binding(
-            get: { model.errorMessage != nil },
-            set: { if !$0 { model.errorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) { model.errorMessage = nil }
-        } message: {
-            Text(model.errorMessage ?? "")
+        .alert(item: Binding(
+            get: { model.errorPresentation },
+            set: { if $0 == nil { model.clearError() } }
+        )) { error in
+            if error.hasDetails {
+                Alert(
+                    title: Text(error.title),
+                    message: Text(error.alertMessage),
+                    primaryButton: .default(Text("Details")) {
+                        Task { @MainActor in
+                            model.clearError()
+                            // Let the alert finish dismissing before the
+                            // details sheet takes over the same presentation.
+                            try? await Task.sleep(for: .milliseconds(200))
+                            model.errorDetails = error
+                        }
+                    },
+                    secondaryButton: .cancel(Text("OK")) {
+                        model.clearError()
+                    }
+                )
+            } else {
+                Alert(
+                    title: Text(error.title),
+                    message: Text(error.alertMessage),
+                    dismissButton: .default(Text("OK")) {
+                        model.clearError()
+                    }
+                )
+            }
+        }
+        .sheet(item: $model.errorDetails) { error in
+            ErrorDetailsView(error: error)
+                .environment(model)
         }
         .sheet(isPresented: $model.showSearch) {
             MessageSearchView()

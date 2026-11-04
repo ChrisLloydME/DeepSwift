@@ -85,8 +85,32 @@ final class AppModel {
     var pendingApprovals: [PendingApproval] = []
     var pendingQuestions: [PendingQuestion] = []
     var pendingPrompts: [PendingPrompt] = []
-    var errorMessage: String?
+    private(set) var errorPresentation: AppErrorPresentation?
+    var errorDetails: AppErrorPresentation?
     var diagnosticLog = ""
+
+    /// Legacy assignment surface retained for callers and tests. Every write
+    /// is sanitized before it can reach the global alert, and the structured
+    /// `errorPresentation` is the only value the alert reads.
+    var errorMessage: String? {
+        get { storedErrorMessage }
+        set {
+            storedErrorMessage = newValue
+            guard let newValue, !newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                errorPresentation = nil
+                return
+            }
+            present(AppErrorPresentationFactory.make(
+                message: newValue,
+                code: "app/error",
+                action: "DeepSwift could not complete the request."
+            ))
+        }
+    }
+
+    private var storedErrorMessage: String?
+    private var lastErrorFingerprint: String?
+    private var lastErrorAt: Date?
     var showInspector = false
     var showFiles = false
     var showTerminal = false
@@ -320,9 +344,11 @@ final class AppModel {
             await refreshAccount()
             await refreshProviderSettings()
         } catch {
-            logger.error("Bootstrap failed: \(error.localizedDescription, privacy: .public)")
-            connectionState = .failed(error.localizedDescription)
-            lastRuntimeError = error.localizedDescription
+            let safeMessage = AppErrorPresentationFactory.summary(error.localizedDescription)
+                ?? "The local runtime could not start."
+            logger.error("Bootstrap failed: \(safeMessage, privacy: .public)")
+            connectionState = .failed(safeMessage)
+            lastRuntimeError = AppErrorPresentationFactory.sanitizedDetails(error.localizedDescription)
         }
     }
 
@@ -380,14 +406,25 @@ final class AppModel {
             markdownStreams.finish()
             connectionState = .degraded("Reconnecting to the runtime…")
         case "host.eventStreamFailed":
-            diagnosticLog = notification.data["message"]?.stringValue ?? diagnosticLog
+            let message = notification.data["message"]?.stringValue ?? ""
+            diagnosticLog = AppErrorPresentationFactory.sanitizedDetails(message) ?? diagnosticLog
         case "runtime.failed":
-            let message = notification.data["message"]?.stringValue ?? "The DSH runtime failed to start."
+            let rawMessage = notification.data["message"]?.stringValue ?? "The DSH runtime failed to start."
             let stderr = notification.data["stderr"]?.stringValue ?? ""
-            lastRuntimeError = stderr.isEmpty ? message : "\(message)\n\n\(stderr)"
+            let safeMessage = AppErrorPresentationFactory.summary(rawMessage)
+                ?? "The DSH runtime failed to start."
+            let rawDetails = stderr.isEmpty ? rawMessage : "\(rawMessage)\n\n\(stderr)"
+            lastRuntimeError = AppErrorPresentationFactory.sanitizedDetails(rawDetails)
             markdownStreams.finish()
-            connectionState = .failed(message)
-            errorMessage = message
+            connectionState = .failed(safeMessage)
+            present(
+                title: "The local runtime couldn’t start",
+                message: safeMessage,
+                recovery: "Check the runtime paths and profile in Settings > General, then try again.",
+                code: notification.data["code"]?.stringValue ?? "runtime/start-failed",
+                action: "start the local runtime",
+                details: lastRuntimeError
+            )
         case "runtime.exited":
             let code = notification.data["code"]?.intValue ?? -1
             markdownStreams.finish()
@@ -397,10 +434,38 @@ final class AppModel {
             connectionState = .failed("The local bridge exited.")
         case "bridge.log":
             if let line = notification.data.stringValue, line.contains("error") {
-                diagnosticLog = String((diagnosticLog + line).suffix(20_000))
+                let safeLine = AppErrorPresentationFactory.sanitizedDetails(line, limit: 2_000) ?? ""
+                diagnosticLog = String((diagnosticLog + safeLine).suffix(20_000))
             }
-        case "bridge.malformed", "bridge.protocolError", "bridge.failed":
-            errorMessage = notification.data["message"]?.stringValue ?? notification.data.stringValue
+        case "bridge.malformed":
+            present(
+                title: "DeepSwift couldn’t read a response from the local runtime",
+                message: notification.data["message"]?.stringValue
+                    ?? "The local runtime returned a response that could not be decoded.",
+                recovery: "Retry the action. If it keeps happening, restart the runtime from Settings > General.",
+                code: notification.data["code"]?.stringValue ?? "bridge/frame-decode",
+                action: "read a response from the local runtime",
+                details: bridgeFrameDetails(notification.data)
+            )
+        case "bridge.protocolError":
+            present(
+                title: "The local runtime reported a protocol error",
+                message: notification.data["message"]?.stringValue
+                    ?? "The bridge received a request it could not process.",
+                recovery: "Restart the runtime from Settings > General, then retry.",
+                code: "bridge/protocol",
+                action: "communicate with the local runtime",
+                details: nil
+            )
+        case "bridge.failed":
+            present(
+                title: "The local bridge could not start",
+                message: notification.data["message"]?.stringValue
+                    ?? "The local bridge failed to start.",
+                recovery: "Check the runtime paths in Settings > General, then try again.",
+                code: notification.data["code"]?.stringValue ?? "bridge/failed",
+                action: "start the local runtime"
+            )
         case "stream.item":
             handleStreamItem(notification.data)
         case "stream.reset":
@@ -465,11 +530,11 @@ final class AppModel {
                 break
             default:
                 eventStreamsOpened = false
-                errorMessage = error.localizedDescription
+                present(error: error, action: "complete the request")
             }
         } catch {
             eventStreamsOpened = false
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
     }
 
@@ -530,6 +595,18 @@ final class AppModel {
 
     private func notificationPrefix(_ id: String) -> String {
         "[\(id)]"
+    }
+
+    private func bridgeFrameDetails(_ data: JSONValue) -> String? {
+        var lines: [String] = []
+        if let bytes = data["bytes"]?.intValue {
+            lines.append("Frame bytes: \(bytes)")
+        }
+        if let reason = data["reason"]?.stringValue,
+           let safeReason = AppErrorPresentationFactory.summary(reason, limit: 180) {
+            lines.append("Decoder: \(safeReason)")
+        }
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
     }
 
     // MARK: - Workspace and session state
@@ -675,6 +752,49 @@ final class AppModel {
         pendingPrompts.removeAll { $0.id == requestID }
     }
 
+    // MARK: - Error presentation
+
+    func present(error: Error, action: String, recovery: String? = nil) {
+        present(AppErrorPresentationFactory.make(error: error, action: action, recovery: recovery))
+    }
+
+    func present(
+        title: String = "DeepSwift couldn’t complete that action",
+        message: String?,
+        recovery: String? = nil,
+        code: String,
+        action: String,
+        details: String? = nil
+    ) {
+        present(AppErrorPresentationFactory.make(
+            title: title,
+            message: message,
+            recovery: recovery,
+            code: code,
+            action: action,
+            details: details
+        ))
+    }
+
+    func present(_ presentation: AppErrorPresentation) {
+        storedErrorMessage = presentation.message
+        let key = [presentation.code, presentation.title, presentation.message, presentation.recovery ?? ""]
+            .joined(separator: "|")
+        if key == lastErrorFingerprint,
+           let lastErrorAt,
+           Date().timeIntervalSince(lastErrorAt) < 30 {
+            return
+        }
+        lastErrorFingerprint = key
+        lastErrorAt = Date()
+        errorPresentation = presentation
+    }
+
+    func clearError() {
+        storedErrorMessage = nil
+        errorPresentation = nil
+    }
+
     // MARK: - Loading
 
     func refreshSessions() async {
@@ -778,7 +898,7 @@ final class AppModel {
             ]), timeout: .seconds(30))
             conversation.applyAgentPreset(id)
         } catch {
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
     }
 
@@ -805,7 +925,7 @@ final class AppModel {
                 errorMessage = "The selected permission preset is not available in this session."
             }
         } catch {
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
     }
 
@@ -1151,7 +1271,8 @@ final class AppModel {
         if !secret.isEmpty {
             message = message.replacingOccurrences(of: secret, with: "••••••")
         }
-        return message
+        return AppErrorPresentationFactory.summary(message, limit: 600)
+            ?? "The provider settings request failed. No internal configuration details were retained."
     }
 
     private static func isValidAPIKey(_ value: String) -> Bool {
@@ -1195,7 +1316,7 @@ final class AppModel {
             startAccountPolling()
         } catch {
             isSigningIn = false
-            errorMessage = "Sign-in could not start: \(error.localizedDescription)"
+            present(error: error, action: "start account sign-in")
         }
     }
 
@@ -1212,7 +1333,7 @@ final class AppModel {
             ]), timeout: .seconds(20))
             account = try? result.decode(AccountView.self)
         } catch {
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
         isSigningIn = false
     }
@@ -1224,7 +1345,7 @@ final class AppModel {
             openedSignInAttemptID = nil
             await refreshModels()
         } catch {
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
     }
 
@@ -1271,7 +1392,7 @@ final class AppModel {
             let result = try await bridge.request("runtime.status", timeout: .seconds(10))
             runtimeFacts = try? result.decode(RuntimeFacts.self)
         } catch {
-            lastRuntimeError = error.localizedDescription
+            lastRuntimeError = AppErrorPresentationFactory.sanitizedDetails(error.localizedDescription)
         }
     }
 
@@ -1389,7 +1510,7 @@ final class AppModel {
             } catch {
                 if self.followStreamID == streamID {
                     self.isLoadingConversation = false
-                    self.errorMessage = error.localizedDescription
+                    self.present(error: error, action: "complete the request")
                 }
             }
         }
@@ -1467,7 +1588,7 @@ final class AppModel {
             await refreshSessions()
             selectSession(sessionID)
         } catch {
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
     }
 
@@ -1496,7 +1617,7 @@ final class AppModel {
                     selectWorkspace(workspace.workspaceId)
                 }
             } catch {
-                errorMessage = error.localizedDescription
+                present(error: error, action: "complete the request")
             }
         }
     }
@@ -1520,7 +1641,7 @@ final class AppModel {
                 workspaces[index] = updated
             }
         } catch {
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
     }
 
@@ -1537,7 +1658,7 @@ final class AppModel {
                 selectSession(nil)
             }
         } catch {
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
     }
 
@@ -1559,7 +1680,7 @@ final class AppModel {
                 sessions[index] = sessions[index].replacingTitle(trimmed)
             }
         } catch {
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
     }
 
@@ -1575,7 +1696,7 @@ final class AppModel {
             archivedSessionIDs = result["archivedSessionIds"]?.arrayValue?.compactMap(\.stringValue) ?? archivedSessionIDs
             if selectedSessionID == session.sessionId { selectSession(nil) }
         } catch {
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
     }
 
@@ -1588,7 +1709,7 @@ final class AppModel {
             ]))
             pinnedSessionIDs = result["pinnedSessionIds"]?.arrayValue?.compactMap(\.stringValue) ?? pinnedSessionIDs
         } catch {
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
     }
 
@@ -1601,7 +1722,7 @@ final class AppModel {
             ]))
             pinnedSessionIDs = result["pinnedSessionIds"]?.arrayValue?.compactMap(\.stringValue) ?? pinnedSessionIDs
         } catch {
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
     }
 
@@ -1614,7 +1735,7 @@ final class AppModel {
             ]))
             archivedSessionIDs = result["archivedSessionIds"]?.arrayValue?.compactMap(\.stringValue) ?? []
         } catch {
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
     }
 
@@ -1635,7 +1756,7 @@ final class AppModel {
                 "args": .object(["request": .object(request)])
             ]))
         } catch {
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
     }
 
@@ -1653,7 +1774,7 @@ final class AppModel {
                     return
                 }
             } catch {
-                errorMessage = error.localizedDescription
+                present(error: error, action: "complete the request")
                 isSending = false
                 return
             }
@@ -1694,7 +1815,7 @@ final class AppModel {
             draft = ""
             attachments = []
         } catch {
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
         isSending = false
     }
@@ -1725,7 +1846,7 @@ final class AppModel {
             ]), timeout: .seconds(30))
             subagentDraft = ""
         } catch {
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
     }
 
@@ -1756,7 +1877,14 @@ final class AppModel {
             }
             attachments.append(ComposerAttachment(name: url.lastPathComponent, mimeType: mimeType, data: data))
         } catch {
-            errorMessage = "Could not read \(url.lastPathComponent): \(error.localizedDescription)"
+            present(
+                title: "The image could not be read",
+                message: "\(url.lastPathComponent) could not be attached.",
+                recovery: "Choose another image file.",
+                code: "attachment/read-failed",
+                action: "read an image attachment",
+                details: AppErrorPresentationFactory.summary(error.localizedDescription)
+            )
         }
     }
 
@@ -1774,7 +1902,7 @@ final class AppModel {
             ]))
             markdownStreams.finish()
         } catch {
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
     }
 
@@ -1794,7 +1922,7 @@ final class AppModel {
             ]), timeout: .seconds(30))
             searchResults = (result["items"]?.arrayValue ?? []).compactMap { try? $0.decode(SessionSearchHit.self) }
         } catch {
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
     }
 
@@ -2221,7 +2349,7 @@ final class AppModel {
                 ])
             ]))
         } catch {
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
     }
 
@@ -2246,7 +2374,7 @@ final class AppModel {
             let records = result["records"]?.arrayValue ?? []
             conversation.mergeOlder(records: records, hasMore: result["hasMore"]?.boolValue ?? false)
         } catch {
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
     }
 
@@ -2257,7 +2385,7 @@ final class AppModel {
                 "outcome": .string(outcome)
             ]))
         } catch {
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
         pendingApprovals.removeAll { $0.eventId == approval.eventId }
     }
@@ -2269,7 +2397,7 @@ final class AppModel {
                 "answers": .array(answers.map { .object($0) })
             ]))
         } catch {
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
         pendingQuestions.removeAll { $0.eventId == question.eventId }
     }
@@ -2281,7 +2409,7 @@ final class AppModel {
                 "cancelled": .bool(true)
             ]))
         } catch {
-            errorMessage = error.localizedDescription
+            present(error: error, action: "complete the request")
         }
         pendingQuestions.removeAll { $0.eventId == question.eventId }
     }
@@ -2316,8 +2444,11 @@ final class AppModel {
             await refreshProviderSettings()
             if let selectedSessionID { selectSession(selectedSessionID) }
         } catch {
-            connectionState = .failed(error.localizedDescription)
-            lastRuntimeError = error.localizedDescription
+            let safeMessage = AppErrorPresentationFactory.summary(error.localizedDescription)
+                ?? "The local runtime could not start."
+            connectionState = .failed(safeMessage)
+            lastRuntimeError = AppErrorPresentationFactory.sanitizedDetails(error.localizedDescription)
+            present(error: error, action: "restart the local runtime")
         }
     }
 
@@ -2348,7 +2479,13 @@ final class AppModel {
             Task { await refreshPermissionCatalog() }
         case "api-session/error":
             if args.count >= 2 {
-                errorMessage = args[1]["message"]?.stringValue ?? args[1].stringValue ?? "The agent reported an error."
+                present(
+                    title: "The agent reported an error",
+                    message: args[1]["message"]?.stringValue,
+                    recovery: "Review the conversation and try again.",
+                    code: "agent/error",
+                    action: "complete the agent turn"
+                )
             }
         case "settings/document-updated", "llm/models-updated", "llm/adapters-updated":
             Task {

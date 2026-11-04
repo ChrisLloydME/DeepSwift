@@ -38,6 +38,7 @@ automation tasks are excluded by product scope.
 | OpenCode Go | Yes | Complete within pinned runtime | Live metadata; all current live IDs are in the installed catalog. Future live-only IDs are marked unavailable. Per-model routing preserved. | Live 28-model discovery; 30 installed; real inference |
 | Model picker | Yes | Complete | Bounded searchable sheet, reasoning effort | Preview with 80 models |
 | Settings | Yes | Complete for in-scope settings | Runtime, models, general, about/licenses; no update feed | Build; source |
+| Error reporting | Yes | Complete | Bounded sanitized alerts; separate bounded details sheet; Copy Diagnostics; repeated failures coalesced | Unit tests incl. bounded NSHostingView layout; source; Xcode preview host timed out |
 | Native menus/shortcuts | Yes | Complete for implemented actions | No fake actions | Source |
 | Runtime lifecycle/isolation | Yes | Complete | Parent watchdog, reconnect, restart | Node tests; packaged app launch |
 | Bundled Node/DSH | Yes | Complete script path | Release needs Developer ID + notarization; Node is host-arch | Packaged app launched with bundled Node/DSH |

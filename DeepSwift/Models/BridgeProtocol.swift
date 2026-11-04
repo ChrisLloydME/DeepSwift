@@ -27,6 +27,62 @@ nonisolated struct BridgeResponseEnvelope: Decodable, Sendable {
     let error: BridgeResponseError?
 }
 
+/// Decoded shape for every bridge-to-Swift stdout frame.
+///
+/// Kept separate from request envelopes so one type can validate both events
+/// and responses. All payload values remain `JSONValue`; only the envelope is
+/// typed.
+nonisolated struct BridgeInboundEnvelope: Decodable, Sendable {
+    let id: String?
+    let result: JSONValue?
+    let error: BridgeResponseError?
+    let event: String?
+    let data: JSONValue?
+}
+
+/// Newline-delimited frame accumulator with an explicit incomplete-frame cap.
+///
+/// The bridge is a line protocol. Keeping framing in one value object makes
+/// split reads, multiple frames per read, and oversized unterminated frames
+/// deterministic and testable.
+struct BridgeFrameBuffer: Sendable {
+    private(set) var buffer = Data()
+    let maximumBufferedBytes: Int
+
+    init(maximumBufferedBytes: Int = 64 * 1024 * 1024) {
+        self.maximumBufferedBytes = maximumBufferedBytes
+    }
+
+    var bufferedByteCount: Int { buffer.count }
+
+    mutating func append(_ chunk: Data) -> [Data] {
+        guard !chunk.isEmpty else { return [] }
+        buffer.append(chunk)
+        var frames: [Data] = []
+        while let newline = buffer.firstIndex(of: 0x0A) {
+            let line = buffer[..<newline]
+            buffer.removeSubrange(...newline)
+            guard !line.isEmpty else { continue }
+            frames.append(Data(line))
+        }
+        return frames
+    }
+
+    /// Discards one unterminated frame that exceeded the cap. Returns its byte
+    /// count so callers can report a bounded diagnostic without retaining the
+    /// payload.
+    mutating func discardOversizedFrame() -> Int? {
+        guard buffer.count > maximumBufferedBytes else { return nil }
+        let count = buffer.count
+        buffer.removeAll(keepingCapacity: false)
+        return count
+    }
+
+    mutating func reset() {
+        buffer.removeAll(keepingCapacity: false)
+    }
+}
+
 nonisolated struct BridgeResponseError: Decodable, Sendable {
     let code: String
     let message: String
