@@ -197,7 +197,7 @@ enum SideBySideDiffContentBuilder {
         )
         let appearance = NSApp.effectiveAppearance
         let numberWidth = numberWidth(for: file)
-        let prefixWidth = 2 + numberWidth + 1
+        let prefixWidth = configuration.showsLineNumbers ? 2 + numberWidth + 1 : 2
         let placeholder = String(repeating: " ", count: prefixWidth)
         let prepared: [PreparedRow] = rows.map { row in
             switch row.content {
@@ -211,8 +211,20 @@ enum SideBySideDiffContentBuilder {
             case let .pair(left, right):
                 return PreparedRow(
                     kind: .pair(
-                        left: left.map { prefix(for: $0.line, width: numberWidth) + $0.line.text } ?? placeholder,
-                        right: right.map { prefix(for: $0.line, width: numberWidth) + $0.line.text } ?? placeholder,
+                        left: left.map {
+                            prefix(
+                                for: $0.line,
+                                width: numberWidth,
+                                showsNumbers: configuration.showsLineNumbers
+                            ) + $0.line.text
+                        } ?? placeholder,
+                        right: right.map {
+                            prefix(
+                                for: $0.line,
+                                width: numberWidth,
+                                showsNumbers: configuration.showsLineNumbers
+                            ) + $0.line.text
+                        } ?? placeholder,
                         leftLine: left?.line,
                         rightLine: right?.line
                     ),
@@ -278,7 +290,9 @@ enum SideBySideDiffContentBuilder {
                         to: result,
                         line: leftLine,
                         at: rowStart,
-                        numberWidth: numberWidth
+                        numberWidth: numberWidth,
+                        showsNumbers: configuration.showsLineNumbers,
+                        prefixWidth: prefixWidth
                     )
                     applyCodeStyle(
                         to: result,
@@ -295,7 +309,9 @@ enum SideBySideDiffContentBuilder {
                         to: result,
                         line: rightLine,
                         at: rightStart,
-                        numberWidth: numberWidth
+                        numberWidth: numberWidth,
+                        showsNumbers: configuration.showsLineNumbers,
+                        prefixWidth: prefixWidth
                     )
                     applyCodeStyle(
                         to: result,
@@ -346,7 +362,11 @@ enum SideBySideDiffContentBuilder {
         return max(3, String(maximum).count)
     }
 
-    private static func prefix(for line: DiffLine, width: Int) -> String {
+    private static func prefix(
+        for line: DiffLine,
+        width: Int,
+        showsNumbers: Bool
+    ) -> String {
         let marker: String
         switch line.kind {
         case .addition: marker = "+"
@@ -354,6 +374,7 @@ enum SideBySideDiffContentBuilder {
         case .context: marker = " "
         case .unknown: marker = "?"
         }
+        guard showsNumbers else { return marker + " " }
         let number = line.oldLineNumber ?? line.newLineNumber
         let numberText = number.map { String($0) } ?? ""
         let padding = String(repeating: " ", count: max(0, width - numberText.count))
@@ -378,9 +399,11 @@ enum SideBySideDiffContentBuilder {
         to string: NSMutableAttributedString,
         line: DiffLine,
         at offset: Int,
-        numberWidth: Int
+        numberWidth: Int,
+        showsNumbers: Bool,
+        prefixWidth: Int
     ) {
-        let length = 2 + numberWidth + 1
+        let length = prefixWidth
         let range = NSRange(location: offset, length: length)
         guard NSMaxRange(range) <= string.length else { return }
         string.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor, range: range)
