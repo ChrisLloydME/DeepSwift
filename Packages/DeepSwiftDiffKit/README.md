@@ -102,6 +102,7 @@ DiffReviewView(
     configuration: .init(),
     initialFileID: nil,
     initialMode: .unified,
+    onSelectionChange: { selectedFileID in ... },
     onClose: nil
 )
 ```

@@ -12,6 +12,7 @@ import SwiftUI
 public struct DiffReviewView: View {
     public let document: DiffDocument
     public let configuration: DiffReviewConfiguration
+    public var onSelectionChange: ((String?) -> Void)?
     public var onClose: (() -> Void)?
 
     @State private var selectedFileID: String?
@@ -23,10 +24,12 @@ public struct DiffReviewView: View {
         configuration: DiffReviewConfiguration = .init(),
         initialFileID: String? = nil,
         initialMode: DiffPresentationMode? = nil,
+        onSelectionChange: ((String?) -> Void)? = nil,
         onClose: (() -> Void)? = nil
     ) {
         self.document = document
         self.configuration = configuration
+        self.onSelectionChange = onSelectionChange
         self.onClose = onClose
         _selectedFileID = State(initialValue: initialFileID ?? document.files.first?.id)
         _mode = State(initialValue: initialMode ?? configuration.defaultMode)
@@ -59,6 +62,7 @@ public struct DiffReviewView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .onChange(of: selectedFileID) {
             selectedHunk = 0
+            onSelectionChange?(selectedFileID)
         }
     }
 
