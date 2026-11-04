@@ -95,7 +95,9 @@ public struct DiffFile: Identifiable, Hashable, Sendable {
         isCoarse = source.coarse == true
         isBinary = source.binary == true || source.kind.caseInsensitiveCompare("binary") == .orderedSame
         isOversized = source.oversized == true || source.kind.caseInsensitiveCompare("oversized") == .orderedSame
-        isUnavailable = source.hunks == nil && !isBinary && !isOversized
+        isUnavailable = (source.hunks == nil || source.kind.caseInsensitiveCompare("unavailable") == .orderedSame)
+            && !isBinary
+            && !isOversized
         hunks = source.hunks?.enumerated().map { index, hunk in
             DiffHunkParser.parse(hunk, index: index)
         } ?? []

@@ -251,6 +251,7 @@ final class DiffCoreTests: XCTestCase {
         XCTAssertEqual(makeSource(kind: "binary", before: true, after: true, hunks: nil, binary: true).state, .binary)
         XCTAssertEqual(makeSource(kind: "oversized", before: true, after: true, hunks: nil, oversized: true).state, .oversized)
         XCTAssertEqual(makeSource(kind: "text", before: true, after: true, hunks: nil).state, .unavailable)
+        XCTAssertEqual(makeSource(kind: "unavailable", before: true, after: true, hunks: []).state, .unavailable)
         XCTAssertEqual(makeSource(kind: "text", before: false, after: true, hunks: []).state, .added)
         XCTAssertEqual(makeSource(kind: "text", before: true, after: false, hunks: []).state, .deleted)
         XCTAssertEqual(makeSource(kind: "text", before: true, after: true, hunks: [], coarse: true).state, .coarse)
