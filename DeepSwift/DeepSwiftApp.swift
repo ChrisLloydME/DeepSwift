@@ -18,6 +18,9 @@ struct DeepSwiftApp: App {
                 .frame(minWidth: 880, minHeight: 580)
                 .task {
                     appDelegate.model = model
+                    // SwiftUI previews render isolated views; they must not
+                    // start the DSH Host or claim an application profile.
+                    guard ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] != "1" else { return }
                     await model.bootstrap()
                 }
         }

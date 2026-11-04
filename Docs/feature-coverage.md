@@ -10,7 +10,7 @@ automation tasks are excluded by product scope.
 | Session list/create/select | Yes | Complete | — | Swift unit tests; live Host tests |
 | Session rename/archive/pin | Yes | Complete | — | Swift unit tests (projection); source |
 | Session history paging | Yes | Complete | — | Swift unit tests |
-| Live streaming assistant | Yes | Complete | — | Real OpenCode stream; live Host |
+| Live streaming assistant | Yes | Complete | MarkdownView `StreamingMarkdownReader`; one source per attempt | Real OpenCode stream; coordinator unit tests; preview |
 | Reasoning activity | Yes | Complete | Presentation is generic | Source; live Host |
 | Tool cards/results/errors | Yes | Complete | Generic fallback card | Real write tool integration |
 | Approvals | Yes | Complete | Allow Once/Reject; fail closed | Swift unit tests; source |
@@ -18,6 +18,7 @@ automation tasks are excluded by product scope.
 | Subagents | Yes | Complete | List/open plus official Queue/Steer continuation prompts; creation remains Agent-tool driven | Swift unit test; source |
 | Slash commands | Yes | Complete | — | Swift unit tests |
 | File references/attachments | Yes | Complete | Local Markdown links open the Host preview; text + PNG/JPEG/GIF/WebP input | Swift unit tests; source |
+| Markdown rendering | Yes | Complete | MarkdownView 3.0.0; headings, nested lists, quotes, tables, code copy, math, links, safe image placeholders, continuous text selection | Build; static/streaming previews; coordinator tests |
 | Permissions presets | Yes | Complete | Uses official `/permission` command; hides when absent | Live catalog probe; Swift unit test |
 | Agent presets | Yes | Complete | Official `agentPresets/list/select`; hidden after the first turn locks composition | Live roster/selection probe; Swift unit test |
 | Workspace register/switch/rename/remove | Yes | Complete | Reveal in Finder | Source |

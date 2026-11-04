@@ -1,8 +1,9 @@
 # Third-Party Notices
 
-DeepSwift vendors SwiftTerm for native terminal emulation and calls the
-official DeepSeek Harness packages. In development it runs Node.js from the
-host machine; a packaged build must carry its own Node.js runtime.
+DeepSwift vendors SwiftTerm for native terminal emulation, calls the official
+DeepSeek Harness packages, and uses MarkdownView (with its SwiftPM
+dependencies) for conversation Markdown. A packaged Release build carries its
+own Node.js runtime.
 
 ## DeepSeek Harness
 
@@ -75,27 +76,57 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+## MarkdownView 3.0.0 and transitive packages
+
+Markdown parsing, streaming reads, tables, code blocks, math, links, and the
+text-based presentation are provided by
+[LiYanan2004/MarkdownView](https://github.com/LiYanan2004/MarkdownView) at the
+tagged release `3.0.0` (commit `6f452b55635246224a3329362e4e11cd3d592a30`).
+`DeepSwift.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`
+pins it and these transitive versions:
+
+| Package | Version | License | Copyright |
+|---|---|---|---|
+| MarkdownView | 3.0.0 | MIT | Copyright (c) 2022 LiYanan2004 |
+| Highlightr | 2.3.0 | MIT | Copyright (c) 2016 Juan Pablo Illanes |
+| SwiftMath | 1.7.3 | MIT | Copyright (c) 2023 Computer Inspirations |
+| RichText | 1.0.0 | MIT | Copyright (c) 2025 LiYanan2004 |
+| swift-markdown | 0.9.0 | Apache License 2.0 | Copyright (c) 2021 Apple Inc. and the Swift project authors |
+| swift-cmark | 0.9.0 | BSD 2-Clause | Copyright (c) 2014 John MacFarlane |
+
+The complete MIT, Apache 2.0, and BSD 2-Clause texts, plus the swift-markdown
+`NOTICE`, are bundled at
+`DeepSwift/ThirdPartyLicenses-MarkdownView.txt` and copied into the app
+bundle as a resource.
+
+MarkdownView's `MarkdownText` presentation uses RichText for continuous native
+text selection. Highlightr supplies fenced-code syntax colors; SwiftMath
+supplies LaTeX math rendering; swift-markdown (and its cmark fork) supplies the
+parser. MarkdownView's default remote-image renderer is not used: DeepSwift
+installs safe image renderers that never fetch while rendering. Remote images
+render as click-to-open placeholders that use the system browser. Relative image
+destinations are not fetched; MarkdownView's relative-image path may show a
+non-loaded placeholder. Workspace file links are routed separately through the
+Host-scoped preview.
+
 ## Node.js
 
 - Project: https://nodejs.org
 - License: MIT, with bundled third-party components under their own licenses
-- Usage: development runtime process host; not bundled with the current app
+- Usage: packaged Release builds carry `Contents/Resources/Node/bin/node` and
+  Node's `LICENSE`; Debug builds may use an isolated project-local Node
 
-A future packaged build must ship a Node.js binary together with Node's
-`LICENSE` and its bundled-component notices.
+`Scripts/package-runtime.sh` copies the Node license and bundled notices from
+the selected official runtime.
 
-## Swift packages evaluated but not adopted
-
-DeepSwift currently uses only Apple frameworks for UI, rendering, and process
-management. The following candidates were considered and not added:
+## Other packages evaluated but not adopted
 
 | Candidate | License | Reason not adopted |
 |---|---|---|
-| `gonzalezreal/textual` | MIT | Native Markdown block rendering was sufficient for this phase |
+| `gonzalezreal/textual` | MIT | MarkdownView provides the required streaming and continuous-selection surface |
 | `CodeEditApp/CodeEditTextView` | MIT | Workspace text preview uses standard text views |
-| `migueldeicaza/SwiftTerm` | MIT | Adopted for native terminal emulation (see above) |
 | `sindresorhus/KeyboardShortcuts` | MIT | Native SwiftUI commands cover the current shortcuts |
-| Sparkle 2 | MIT | Packaging and update feed are not yet implemented |
+| Sparkle 2 | MIT | Not authorized for this task; no update feed |
 
 If any candidate is adopted later, its license and attribution must be added
 here and to the packaged notices before release.

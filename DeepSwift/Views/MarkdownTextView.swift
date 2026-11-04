@@ -3,325 +3,340 @@
 //  DeepSwift
 //
 
-import AppKit
+import MarkdownView
 import SwiftUI
 
-/// Small, native Markdown presentation layer.
+/// Static Markdown presentation for durable conversation content.
 ///
-/// Inline formatting and links use `AttributedString`; block structure is
-/// rendered explicitly so headings, lists, quotes, fenced code, and tables
-/// keep their native spacing and selection behavior.
+/// `MarkdownText` is the package's continuous-text presentation: paragraphs,
+/// headings, lists, and quotes are one selectable native text surface, while
+/// code blocks, tables, math, and images are hosted views supplied by the same
+/// parser. It is used for historical messages and settled assistant messages.
 struct MarkdownTextView: View {
     let text: String
 
-    private var blocks: [MarkdownBlock] {
-        MarkdownBlock.parse(text)
+    var body: some View {
+        MarkdownText(text)
+            .deepSwiftMarkdownPresentation()
+    }
+}
+
+/// Streaming presentation for the one assistant attempt currently in flight.
+///
+/// The source is owned by `MarkdownStreamCoordinator`, never by a SwiftUI body,
+/// so view evaluation cannot recreate or reset the incremental parser.
+struct StreamingMarkdownTextView: View {
+    private let coordinator: MarkdownStreamCoordinator
+    private let attemptID: String
+    private let fallbackText: String
+
+    init(coordinator: MarkdownStreamCoordinator, attemptID: String, fallbackText: String = "") {
+        self.coordinator = coordinator
+        self.attemptID = attemptID
+        self.fallbackText = fallbackText
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            ForEach(blocks) { block in
-                blockView(block)
+        if let source = coordinator.source(for: attemptID) {
+            StreamingMarkdownReader(source) { parseResult in
+                MarkdownText(parseResult)
+                    .deepSwiftMarkdownPresentation()
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            MarkdownTextView(text: fallbackText)
         }
+    }
+}
+
+/// Owns the streaming source for the single active assistant attempt.
+///
+/// At most one attempt is live at a time. Starting a new attempt finishes and
+/// releases the previous source; finishing a turn or changing sessions does the
+/// same. The source's text is always the accumulated text from the durable
+/// projection, never a second conversation store.
+@MainActor
+final class MarkdownStreamCoordinator {
+    private var activeAttemptID: String?
+    private var activeSource: StreamingMarkdownSource?
+
+    func synchronize(attemptID: String?, text: String) {
+        guard let attemptID else {
+            finish()
+            return
+        }
+
+        if activeAttemptID != attemptID {
+            finish()
+            let source = StreamingMarkdownSource(text)
+            activeAttemptID = attemptID
+            activeSource = source
+        } else if let source = activeSource, source.text != text {
+            source.text = text
+        }
+    }
+
+    func source(for attemptID: String) -> StreamingMarkdownSource? {
+        guard activeAttemptID == attemptID else { return nil }
+        return activeSource
+    }
+
+    func finish() {
+        activeSource?.finishStreaming()
+        activeSource = nil
+        activeAttemptID = nil
+    }
+}
+
+// MARK: - Presentation
+
+private struct DeepSwiftMarkdownPresentation: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .markdownBaseURL(MarkdownRouting.baseURL)
+            .markdownMathRenderingEnabled()
+            .markdownCodeBlockStyle(.default(lightTheme: "xcode", darkTheme: "dark"))
+            .markdownBlockQuoteStyle(.github)
+            .markdownTableStyle(.github)
+            .markdownListIndent(16)
+            .markdownElementRenderer(
+                .link(HostFileMarkdownLinkRenderer(), urlScheme: MarkdownRouting.fileScheme)
+            )
+            .markdownElementRenderer(
+                .link(HostFileMarkdownLinkRenderer(), urlScheme: "file")
+            )
+            .markdownElementRenderer(
+                .image(SafeMarkdownImageRenderer(), urlScheme: "https")
+            )
+            .markdownElementRenderer(
+                .image(SafeMarkdownImageRenderer(), urlScheme: "http")
+            )
+            .markdownElementRenderer(
+                .image(SafeMarkdownImageRenderer(), urlScheme: "file")
+            )
+    }
+}
+
+private extension View {
+    func deepSwiftMarkdownPresentation() -> some View {
+        modifier(DeepSwiftMarkdownPresentation())
+    }
+}
+
+enum MarkdownRouting {
+    /// Relative links use a private URL scheme. It carries no network or file
+    /// authority; the application routes it through its `openURL` handler into
+    /// the Host-scoped workspace preview.
+    static let fileScheme = "dsh-file"
+    static let baseURL = URL(string: "dsh-file:///")!
+
+    /// Converts a package-resolved relative link back to a workspace-relative
+    /// path. The private scheme never reaches the network or AppKit's file
+    /// opener directly.
+    static func workspacePath(from url: URL) -> String {
+        let raw = url.path.isEmpty ? url.relativeString : url.path
+        let path = raw.hasPrefix("/") ? String(raw.dropFirst()) : raw
+        return path.removingPercentEncoding ?? path
+    }
+}
+
+// MARK: - Links
+
+/// Routes workspace-relative Markdown links through the application's
+/// `openURL` environment, which opens them in the Host-scoped file preview.
+private struct HostFileMarkdownLinkRenderer: MarkdownLinkRenderer {
+    func makeBody(configuration: Configuration) -> some View {
+        HostFileMarkdownLink(configuration: configuration)
+    }
+}
+
+private struct HostFileMarkdownLink: View {
+    let configuration: MarkdownLinkRendererConfiguration
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        Button {
+            openURL(configuration.url)
+        } label: {
+            configuration.label
+                .foregroundStyle(.tint)
+                .underline()
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens the file in the DeepSwift workspace preview")
+    }
+}
+
+// MARK: - Images
+
+/// Parses image syntax but never fetches it implicitly. Opening is a deliberate
+/// user action: local workspace images use the Host preview, remote images use
+/// the system browser. This keeps streamed model output from probing the local
+/// filesystem or private network resources.
+private struct SafeMarkdownImageRenderer: MarkdownImageRenderer {
+    func makeBody(configuration: Configuration) -> some View {
+        SafeMarkdownImage(configuration: configuration)
+    }
+}
+
+private struct SafeMarkdownImage: View {
+    let configuration: MarkdownImageRendererConfiguration
+    @Environment(\.openURL) private var openURL
+
+    private var label: String {
+        let alternative = configuration.alternativeText?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return alternative.isEmpty ? "Image" : alternative
+    }
+
+    private var target: URL {
+        configuration.url
+    }
+
+    private var isWorkspaceFile: Bool {
+        configuration.url.scheme == MarkdownRouting.fileScheme
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "photo")
+                .foregroundStyle(.secondary)
+            Text(label)
+                .font(.callout)
+                .lineLimit(2)
+            Spacer(minLength: 8)
+            Button(isWorkspaceFile ? "Preview" : "Open") {
+                openURL(target)
+            }
+            .buttonStyle(.link)
+            .font(.callout)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Image: \(label)")
     }
+}
 
-    @ViewBuilder
-    private func blockView(_ block: MarkdownBlock) -> some View {
-        switch block.kind {
-        case let .heading(level, content):
-            Text(inline(content))
-                .font(headingFont(level))
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, level <= 2 ? 4 : 2)
-        case let .paragraph(content):
-            Text(inline(content))
-                .font(.body)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-        case let .bullet(content, depth):
-            HStack(alignment: .firstTextBaseline, spacing: 7) {
-                Text("•")
-                    .foregroundStyle(.secondary)
-                Text(inline(content))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(.leading, CGFloat(depth) * 16)
-        case let .numbered(number, content, depth):
-            HStack(alignment: .firstTextBaseline, spacing: 7) {
-                Text("\(number).")
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
-                Text(inline(content))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(.leading, CGFloat(depth) * 16)
-        case let .quote(content):
-            HStack(alignment: .top, spacing: 10) {
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(.tertiary)
-                    .frame(width: 3)
-                Text(inline(content))
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        case let .code(language, code):
-            CodeBlockView(language: language, code: code)
-        case let .table(rows):
-            MarkdownTableView(rows: rows)
-        }
-    }
+#if DEBUG
+#Preview("Markdown Content v2") {
+    ScrollView {
+        MarkdownTextView(
+            text: """
+            # Native Markdown
 
-    private func headingFont(_ level: Int) -> Font {
-        switch level {
-        case 1: return .title2.weight(.semibold)
-        case 2: return .title3.weight(.semibold)
-        case 3: return .headline
-        default: return .subheadline.weight(.semibold)
-        }
-    }
+            A paragraph with **bold**, *italic*, `inline code`, a [local file](Sources/App.swift), and an [external link](https://example.com). 中文与 emoji 混排 🚀。
 
-    private func inline(_ markdown: String) -> AttributedString {
-        let options = AttributedString.MarkdownParsingOptions(
-            interpretedSyntax: .inlineOnlyPreservingWhitespace,
-            failurePolicy: .returnPartiallyParsedIfPossible
+            > A quoted paragraph with a nested emphasis: **still readable**.
+
+            1. First ordered item
+               - Nested bullet with `code`
+               - Another nested bullet
+            2. Second ordered item
+
+            | Feature | Status |
+            |---|---|
+            | Headings | Supported |
+            | Tables | Supported |
+
+            ![A remote image](https://example.com/diagram.png)
+
+            Inline math $E = mc^2$ and display math:
+
+            $$
+            \\int_0^1 x^2\\,dx = \\frac{1}{3}
+            $$
+
+            ```swift
+            struct Greeting {
+                func welcome(_ name: String) -> String {
+                    "Hello, \\(name)!"
+                }
+            }
+            ```
+
+            ### Incomplete fence
+
+            ```swift
+            let inProgress = true
+            """
         )
-        return (try? AttributedString(markdown: markdown, options: options)) ?? AttributedString(markdown)
+        .padding(24)
+        .frame(maxWidth: 700, alignment: .leading)
     }
+    .frame(width: 720, height: 900)
 }
 
-private struct MarkdownBlock: Identifiable {
-    enum Kind {
-        case heading(level: Int, content: String)
-        case paragraph(String)
-        case bullet(content: String, depth: Int)
-        case numbered(number: Int, content: String, depth: Int)
-        case quote(String)
-        case code(language: String?, code: String)
-        case table([[String]])
+private struct StreamingMarkdownPreview: View {
+    @State private var source: StreamingMarkdownSource
+
+    init() {
+        let source = StreamingMarkdownSource(
+            """
+            # Streaming response
+
+            The completed stream uses the same parser and presentation as a
+            historical response, including **emphasis**, `inline code`, and:
+
+            - A list item
+            - Another item
+
+            | A | B |
+            |---|---|
+            | 1 | 2 |
+
+            ```swift
+            let answer = 42
+            print(answer)
+            ```
+
+            Done — 中文 and emoji 🎉.
+            """
+        )
+        source.finishStreaming()
+        _source = State(initialValue: source)
     }
-
-    let id: Int
-    let kind: Kind
-
-    static func parse(_ text: String) -> [MarkdownBlock] {
-        let lines = text.components(separatedBy: .newlines)
-        var blocks: [MarkdownBlock] = []
-        var paragraph: [String] = []
-        var index = 0
-
-        func append(_ kind: Kind) {
-            blocks.append(MarkdownBlock(id: blocks.count, kind: kind))
-        }
-
-        func flushParagraph() {
-            let content = paragraph.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !content.isEmpty { append(.paragraph(content)) }
-            paragraph.removeAll(keepingCapacity: true)
-        }
-
-        while index < lines.count {
-            let line = lines[index]
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-
-            if trimmed.hasPrefix("```") {
-                flushParagraph()
-                let language = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
-                var code: [String] = []
-                index += 1
-                while index < lines.count, !lines[index].trimmingCharacters(in: .whitespaces).hasPrefix("```") {
-                    code.append(lines[index])
-                    index += 1
-                }
-                if index < lines.count { index += 1 }
-                append(.code(language: language.isEmpty ? nil : language, code: code.joined(separator: "\n")))
-                continue
-            }
-
-            if isTableRow(trimmed), index + 1 < lines.count, isTableSeparator(lines[index + 1]) {
-                flushParagraph()
-                var rows: [[String]] = [cells(trimmed)]
-                index += 2
-                while index < lines.count, isTableRow(lines[index].trimmingCharacters(in: .whitespaces)) {
-                    rows.append(cells(lines[index].trimmingCharacters(in: .whitespaces)))
-                    index += 1
-                }
-                append(.table(rows))
-                continue
-            }
-
-            if trimmed.isEmpty {
-                flushParagraph()
-                index += 1
-                continue
-            }
-
-            if let heading = headingContent(trimmed) {
-                flushParagraph()
-                append(.heading(level: heading.level, content: heading.content))
-                index += 1
-                continue
-            }
-
-            let leadingSpaces = line.prefix { $0 == " " || $0 == "\t" }.count
-            let depth = max(0, leadingSpaces / 2)
-
-            if let content = bulletContent(trimmed) {
-                flushParagraph()
-                append(.bullet(content: content, depth: depth))
-                index += 1
-                continue
-            }
-
-            if let numbered = numberedContent(trimmed) {
-                flushParagraph()
-                append(.numbered(number: numbered.number, content: numbered.content, depth: depth))
-                index += 1
-                continue
-            }
-
-            if trimmed.hasPrefix(">") {
-                flushParagraph()
-                append(.quote(String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)))
-                index += 1
-                continue
-            }
-
-            paragraph.append(trimmed)
-            index += 1
-        }
-        flushParagraph()
-        return blocks
-    }
-
-    private static func headingContent(_ line: String) -> (level: Int, content: String)? {
-        let hashes = line.prefix { $0 == "#" }.count
-        guard hashes > 0, hashes <= 6 else { return nil }
-        let rest = line.dropFirst(hashes)
-        guard rest.hasPrefix(" ") else { return nil }
-        return (hashes, rest.trimmingCharacters(in: .whitespaces))
-    }
-
-    private static func bulletContent(_ line: String) -> String? {
-        for marker in ["- ", "* ", "+ "] where line.hasPrefix(marker) {
-            return String(line.dropFirst(marker.count))
-        }
-        return nil
-    }
-
-    private static func numberedContent(_ line: String) -> (number: Int, content: String)? {
-        let digits = line.prefix { $0.isNumber }
-        guard !digits.isEmpty, let number = Int(digits) else { return nil }
-        let rest = line.dropFirst(digits.count)
-        guard rest.hasPrefix(". ") else { return nil }
-        return (number, String(rest.dropFirst(2)))
-    }
-
-    private static func isTableRow(_ line: String) -> Bool {
-        line.hasPrefix("|") && line.hasSuffix("|") && line.filter { $0 == "|" }.count >= 2
-    }
-
-    private static func isTableSeparator(_ line: String) -> Bool {
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
-        guard isTableRow(trimmed) else { return false }
-        return cells(trimmed).allSatisfy { cell in
-            let value = cell.trimmingCharacters(in: .whitespaces)
-            return !value.isEmpty && value.allSatisfy { $0 == "-" || $0 == ":" || $0 == " " }
-        }
-    }
-
-    private static func cells(_ line: String) -> [String] {
-        var value = line
-        if value.hasPrefix("|") { value.removeFirst() }
-        if value.hasSuffix("|") { value.removeLast() }
-        return value.split(separator: "|", omittingEmptySubsequences: false).map {
-            $0.trimmingCharacters(in: .whitespaces)
-        }
-    }
-}
-
-private struct CodeBlockView: View {
-    let language: String?
-    let code: String
-    @State private var copied = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text(language?.uppercased() ?? "CODE")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(code, forType: .string)
-                    copied = true
-                    Task {
-                        try? await Task.sleep(for: .seconds(1.2))
-                        copied = false
-                    }
-                } label: {
-                    Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
-                        .font(.caption2)
-                }
-                .buttonStyle(.borderless)
+        ScrollView {
+            StreamingMarkdownReader(source) { parseResult in
+                MarkdownText(parseResult)
+                    .deepSwiftMarkdownPresentation()
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(.quaternary.opacity(0.35))
-
-            Divider()
-
-            ScrollView(.horizontal) {
-                Text(code)
-                    .font(.system(.callout, design: .monospaced))
-                    .textSelection(.enabled)
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            .padding(24)
+            .frame(maxWidth: 700, alignment: .leading)
         }
-        .background(Color(nsColor: .textBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(.separator, lineWidth: 1)
-        }
+        .frame(width: 720, height: 760)
     }
 }
 
-private struct MarkdownTableView: View {
-    let rows: [[String]]
-
-    var body: some View {
-        ScrollView(.horizontal) {
-            Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
-                ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
-                    GridRow {
-                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                            Text(.init(cell))
-                                .font(rowIndex == 0 ? .callout.weight(.semibold) : .callout)
-                                .textSelection(.enabled)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .overlay(alignment: .bottom) {
-                                    Rectangle().fill(.separator).frame(height: 1)
-                                }
-                        }
-                    }
-                    .background(rowIndex == 0 ? Color.secondary.opacity(0.08) : Color.clear)
-                }
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(.separator, lineWidth: 1)
-        }
-    }
+#Preview("Streaming Markdown") {
+    StreamingMarkdownPreview()
 }
+#endif
+
+#if DEBUG
+#Preview("Markdown Narrow") {
+    ScrollView {
+        MarkdownTextView(
+            text: """
+            ## Narrow column
+
+            | Component | Behavior |
+            |---|---|
+            | Table | Wraps without losing columns |
+            | Code | Scrolls horizontally |
+
+            ```swift
+            let aVeryLongLineThatMustRemainReadableInANarrowConversationColumn = "value"
+            ```
+            """
+        )
+        .padding(16)
+        .frame(maxWidth: 420, alignment: .leading)
+    }
+    .frame(width: 440, height: 640)
+}
+#endif

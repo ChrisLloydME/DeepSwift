@@ -10,6 +10,15 @@
       "Base",
     ],
   },
+  "packages": [
+    {
+      "kind": "remote",
+      "repository": "https://github.com/LiYanan2004/MarkdownView.git",
+      "version": {
+        "up-to-next-minor-version": "3.0.0",
+      },
+    },
+  ],
   "files": [
     { "kind": "folder", "path": "DeepSwift", "target-membership": [ "DeepSwift" ] },
     { "kind": "folder", "path": "DeepSwiftTests", "target-membership": [ "DeepSwiftTests" ] },
@@ -44,6 +53,13 @@
           "name": "Embed Frameworks",
           "bundle-base-path": "build-products-directory",
           "relative-path": "$(FRAMEWORKS_FOLDER_PATH)",
+        },
+      ],
+      "package-product-members": [
+        {
+          "package": "MarkdownView",
+          "product-name": "MarkdownView",
+          "build-phase": { "build-phase": "frameworks" },
         },
       ],
       "build-settings": {

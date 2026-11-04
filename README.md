@@ -16,7 +16,7 @@ repository contains no second Agent engine and no WebView or React surface.
 | Runtime lifecycle | Implemented | Start, readiness, unexpected exit, reconnect with backoff, restart, graceful child shutdown |
 | Workspaces | Implemented | List, create from `NSOpenPanel`, rename, remove registration, select; archive and pin state projected from Host |
 | Sessions | Implemented | List, create, open, history paging, live follow, rename, archive/unarchive, running state, subagent browsing |
-| Conversation | Implemented | User/assistant messages, reasoning, streaming text, Markdown, fenced code, tables, tool cards, errors, interruption notices |
+| Conversation | Implemented | User/assistant messages, reasoning, MarkdownView 3.0.0 streaming/static Markdown, fenced code, tables, math, tool cards, errors, interruption notices |
 | Message composer | Implemented | AppKit `NSTextView`, IME-safe composition, Enter/Shift-Enter preference, image attachments, drag and drop, official slash-command suggestions |
 | Tools | Implemented | Generic native tool card with per-tool icon/summary, collapsible arguments/output, errors and completion |
 | Approvals | Implemented | Official Agent-scoped approval waterfall; Allow Once / Reject; fail-closed |
@@ -47,7 +47,9 @@ Requirements:
 - Xcode 27 (project format and SwiftUI APIs are current)
 - Node.js **24.9.0 or later** for the development runtime
 
-1. Open `DeepSwift.xcodeproj` in Xcode.
+1. Open `DeepSwift.xcodeproj` in Xcode. Swift Package Manager resolves the
+   pinned MarkdownView dependency (`Package.resolved` records MarkdownView
+   3.0.0 and its transitive graph).
 2. Run `Scripts/prepare-dev-runtime.sh` once. It installs the pinned official
    DSH package into `.local/runtime/bridge` with a project-local npm cache.
 3. Build and run the `DeepSwift` scheme. For a dedicated development profile:

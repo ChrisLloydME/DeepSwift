@@ -58,6 +58,7 @@ final class AppModel {
     var selectedWorkspaceID: String?
     var selectedSessionID: String?
     var conversation = ConversationProjection()
+    let markdownStreams = MarkdownStreamCoordinator()
     var conversationSessionID: String?
     var isLoadingConversation = false
     var isLoadingOlder = false
@@ -372,9 +373,11 @@ final class AppModel {
             runtimeFacts = try? notification.data.decode(RuntimeFacts.self)
             scheduleSessionRefresh()
         case "host.disconnected":
+            markdownStreams.finish()
             logger.warning("Host event stream disconnected")
             connectionState = .degraded("Reconnecting to the runtime…")
         case "host.reconnecting":
+            markdownStreams.finish()
             connectionState = .degraded("Reconnecting to the runtime…")
         case "host.eventStreamFailed":
             diagnosticLog = notification.data["message"]?.stringValue ?? diagnosticLog
@@ -382,12 +385,15 @@ final class AppModel {
             let message = notification.data["message"]?.stringValue ?? "The DSH runtime failed to start."
             let stderr = notification.data["stderr"]?.stringValue ?? ""
             lastRuntimeError = stderr.isEmpty ? message : "\(message)\n\n\(stderr)"
+            markdownStreams.finish()
             connectionState = .failed(message)
             errorMessage = message
         case "runtime.exited":
             let code = notification.data["code"]?.intValue ?? -1
+            markdownStreams.finish()
             connectionState = .failed("The DSH runtime exited unexpectedly (code \(code)).")
         case "bridge.exited":
+            markdownStreams.finish()
             connectionState = .failed("The local bridge exited.")
         case "bridge.log":
             if let line = notification.data.stringValue, line.contains("error") {
@@ -404,6 +410,7 @@ final class AppModel {
         case "stream.end":
             if let id = notification.data["id"]?.stringValue {
                 if id == followStreamID {
+                    markdownStreams.finish()
                     isLoadingConversation = false
                 } else if id == terminalStreamID {
                     terminalStreamID = nil
@@ -489,6 +496,7 @@ final class AppModel {
     private func handleStreamReset(_ data: JSONValue) {
         guard let id = data["id"]?.stringValue else { return }
         if id == followStreamID {
+            markdownStreams.finish()
             isLoadingConversation = true
             diagnosticLog = "Session stream reset: \(data["reason"]?.stringValue ?? "carrier reset")"
         } else if id == jobsStreamID {
@@ -510,6 +518,7 @@ final class AppModel {
             terminalWritable = false
             terminalLoading = false
         } else if id == followStreamID {
+            markdownStreams.finish()
             isLoadingConversation = false
             errorMessage = message
         } else if id == jobsStreamID {
@@ -616,6 +625,7 @@ final class AppModel {
         case "snapshot":
             captureWorkspaceChange(fromSnapshot: frame)
             conversation.apply(snapshot: frame)
+            syncMarkdownStream()
             isLoadingConversation = false
             logger.info("Conversation snapshot: \(self.conversation.items.count, privacy: .public) items, more=\(self.conversation.hasMore, privacy: .public)")
             if let title = conversation.title, let id = conversationSessionID,
@@ -626,6 +636,10 @@ final class AppModel {
             guard let eventValue = frame["event"], let event = SessionWireEvent(value: eventValue) else { return }
             captureWorkspaceChange(seq: event.seq, event: event)
             conversation.apply(event: event)
+            syncMarkdownStream()
+            if event.type == "turn/end" || event.type == "error" {
+                markdownStreams.finish()
+            }
             if event.type == "user/message" {
                 settlePendingPrompt(source: event.data["message"]?["source"] ?? event.data["source"])
             }
@@ -637,10 +651,23 @@ final class AppModel {
         case "assistant-stream":
             if let assistantFrame = frame["frame"] {
                 conversation.apply(assistantFrame: assistantFrame)
+                syncMarkdownStream()
             }
         default:
             break
         }
+    }
+
+    private func syncMarkdownStream() {
+        guard let live = conversation.live else {
+            markdownStreams.finish()
+            return
+        }
+        markdownStreams.synchronize(attemptID: live.attemptId, text: live.text)
+    }
+
+    func finishMarkdownStreams() {
+        markdownStreams.finish()
     }
 
     private func settlePendingPrompt(source: JSONValue?) {
@@ -1284,6 +1311,7 @@ final class AppModel {
         changesLoading = false
         changesSequence = nil
         changesSessionID = nil
+        markdownStreams.finish()
         conversation.reset()
         pendingPrompts = []
         attachments = []
@@ -1744,6 +1772,7 @@ final class AppModel {
                 "method": .string("cancel"),
                 "args": .object(["request": .object(["sessionId": .string(sessionID)])])
             ]))
+            markdownStreams.finish()
         } catch {
             errorMessage = error.localizedDescription
         }

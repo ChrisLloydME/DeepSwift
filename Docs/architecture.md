@@ -223,8 +223,15 @@ API-key authentication remain distinct routes and catalog groups.
 - Semantic colors and materials for Light/Dark Mode.
 - Tool cards use a generic renderer with tool-specific display names/icons;
   unknown tools remain renderable.
-- Markdown uses `AttributedString` for inline formatting, with explicit native
-  blocks for fenced code and pipe tables.
+- Conversation Markdown uses the pinned **MarkdownView 3.0.0** package for
+  parsing and presentation. `MarkdownText` supplies the continuous native text
+  surface and native code-copy control; `StreamingMarkdownReader` consumes a
+  single `StreamingMarkdownSource` per assistant attempt. `MarkdownStreamCoordinator`
+  owns that source and synchronizes it from the durable `LiveAssistant` text,
+  so SwiftUI body evaluation cannot create a competing content state. Relative
+  links use a private URL scheme that routes into the Host-scoped file preview;
+  remote images render as click-to-open placeholders rather than being fetched
+  implicitly. Relative image destinations are not loaded inline.
 - SwiftTerm's upstream `Color` type is renamed `TerminalColor` only inside the
   vendored framework to avoid colliding with SwiftUI `Color`; the terminal
   surface itself is an AppKit `NSView` bridged through `NSViewRepresentable`.

@@ -26,6 +26,9 @@ struct ChatView: View {
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
+        .onDisappear {
+            model.finishMarkdownStreams()
+        }
     }
 
     private var conversation: some View {
@@ -439,6 +442,7 @@ private struct LoadingConversationView: View {
 }
 
 private struct LiveAssistantView: View {
+    @Environment(AppModel.self) private var model
     let live: LiveAssistant
 
     var body: some View {
@@ -457,12 +461,12 @@ private struct LiveAssistantView: View {
                 }
             }
             if !live.text.isEmpty {
-                // Plain text keeps token-by-token streaming cheap; the
-                // committed assistant message renders through the full
-                // Markdown block renderer.
-                Text(live.text)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                StreamingMarkdownTextView(
+                    coordinator: model.markdownStreams,
+                    attemptID: live.attemptId,
+                    fallbackText: live.text
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             if !live.toolNames.isEmpty {
                 HStack(spacing: 6) {

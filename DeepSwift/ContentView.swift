@@ -101,6 +101,10 @@ struct ContentView: View {
                 Task { await model.openReferencedPath(url.path) }
                 return .handled
             }
+            if url.scheme == "dsh-file" {
+                Task { await model.openReferencedPath(MarkdownRouting.workspacePath(from: url)) }
+                return .handled
+            }
             if url.scheme == nil {
                 Task { await model.openReferencedPath(url.relativeString) }
                 return .handled
