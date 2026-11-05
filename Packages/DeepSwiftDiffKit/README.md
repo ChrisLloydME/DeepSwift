@@ -1,7 +1,8 @@
 # DeepSwiftDiffKit
 
-A standalone, native macOS Diff presentation package for DeepSwift. It is
-deliberately not integrated with the DeepSwift application UI yet.
+A standalone, native macOS Diff presentation package for DeepSwift. The package
+remains independent of DSH models, the Node Bridge, and application runtime
+services; the host application adapts DSH data into DiffCore types.
 
 ## Targets
 
@@ -101,14 +102,26 @@ DiffReviewView(
     document: document,
     configuration: .init(),
     initialFileID: nil,
+    selectedFileID: $selectedFileID,
     initialMode: .unified,
     onSelectionChange: { selectedFileID in ... },
     onClose: nil
 )
+
+DiffReviewDetailView(
+    file: file,
+    configuration: .init(),
+    mode: $mode
+)
+
+DiffFileRow(file: summaryFile)
 ```
 
 The host owns windows and navigation policy. `DiffReviewView` is content only;
-it does not create a window, scene, or WindowGroup.
+it does not create a window, scene, or WindowGroup. `DiffReviewDetailView` is
+the single-file detail surface used by the standalone review and by hosts that
+provide a native `NavigationSplitView` sidebar. `DiffFileRow` is the shared
+changed-file row for those native sidebars.
 
 ## Rendering Technology
 
@@ -204,19 +217,23 @@ The package uses Swift tools 6.0 with Swift 5 language mode and a macOS 15
 deployment target, matching the application target. It has no external package
 dependencies, so no new third-party notice is required.
 
-## Future Integration
+## Application Integration
 
-1. **Conversation summary**: convert the existing `WorkspaceChangesSummary` to
-   `DiffChangeSummary` and render `DiffSummaryView` in place of the current
-   `WorkspaceChangesCard`. The host supplies the selection binding and the
-   full-review closure. No window belongs in the card.
-2. **Review window**: load `WorkspaceFileDiff` values through the existing
-   `AppModel.loadChangesDiff` path, adapt them to `DiffFileSource`/`DiffFile`,
-   materialize one `DiffDocument`, and place `DiffReviewView` in a dedicated
-   standard macOS window. Snapshot lifetime and privacy policy remain the host's
-   responsibility; the Kit does not fetch or persist source or Diff data.
+The DeepSwift application integrates the package without moving Host logic into
+it:
 
-Neither integration is implemented in this task.
+1. **Conversation summary**: `DiffSummaryView` replaces the legacy changed-files
+   card. The application adapter converts `WorkspaceChangesSummary` and anchors
+   the card at the captured `workspace/changes` event sequence.
+2. **Review window**: a data-driven SwiftUI `WindowGroup` presents a standard
+   macOS window with a native `NavigationSplitView` sidebar and toolbar.
+   `DiffReviewDetailView` renders the selected file, while the application
+   window model loads one Host comparison at a time, caches it in memory, and
+   keeps each Session/sequence review independent.
+
+The application owns window identity, DSH session/sequence capture, request
+lifecycle, loading and error states, and any snapshot retention policy. The Kit
+does not fetch or persist source or Diff data.
 
 ## Scope and Limitations
 
@@ -225,7 +242,8 @@ Neither integration is implemented in this task.
 - No textual patch parser or Git/libgit2 engine. Input is already-structured
   DSH hunks.
 - No persistent Diff cache or historical snapshot retention.
-- No application window, ChatView change, or Diff Sheet replacement.
+- The host application, not this package, owns the Review window and the Chat
+  summary placement.
 - The Xcode preview host cannot resolve a package file that is not registered in
   the active project; the package's previews are compiled as part of the target.
 - Copying a visible gutter includes its line numbers.

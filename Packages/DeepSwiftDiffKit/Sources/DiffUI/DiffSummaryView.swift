@@ -92,7 +92,7 @@ public struct DiffSummaryView: View {
             }
 
             if let onReview {
-                Button("Review…", action: onReview)
+                Button("Open Full Review", action: onReview)
                     .buttonStyle(.borderless)
                     .accessibilityHint("Opens the full Diff review in the host application")
             }

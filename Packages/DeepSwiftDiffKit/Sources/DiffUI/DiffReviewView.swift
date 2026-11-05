@@ -15,23 +15,31 @@ public struct DiffReviewView: View {
     public var onSelectionChange: ((String?) -> Void)?
     public var onClose: (() -> Void)?
 
-    @State private var selectedFileID: String?
+    @State private var internalSelection: String?
     @State private var mode: DiffPresentationMode
-    @State private var selectedHunk = 0
+    private let externalSelection: Binding<String?>?
 
+    /// `initialFileID` remains the source-compatible way to choose the first
+    /// file. Hosts that need externally controlled navigation can additionally
+    /// pass `selectedFileID`; file identity is never part of the document.
     public init(
         document: DiffDocument,
         configuration: DiffReviewConfiguration = .init(),
         initialFileID: String? = nil,
+        selectedFileID: Binding<String?>? = nil,
         initialMode: DiffPresentationMode? = nil,
         onSelectionChange: ((String?) -> Void)? = nil,
         onClose: (() -> Void)? = nil
     ) {
         self.document = document
         self.configuration = configuration
+        self.externalSelection = selectedFileID
         self.onSelectionChange = onSelectionChange
         self.onClose = onClose
-        _selectedFileID = State(initialValue: initialFileID ?? document.files.first?.id)
+        let initial = selectedFileID?.wrappedValue
+            ?? initialFileID
+            ?? document.files.first?.id
+        _internalSelection = State(initialValue: initial)
         _mode = State(initialValue: initialMode ?? configuration.defaultMode)
     }
 
@@ -60,9 +68,8 @@ public struct DiffReviewView: View {
         }
         .frame(minWidth: 760, minHeight: 480)
         .background(Color(nsColor: .windowBackgroundColor))
-        .onChange(of: selectedFileID) {
-            selectedHunk = 0
-            onSelectionChange?(selectedFileID)
+        .onChange(of: selection.wrappedValue) {
+            onSelectionChange?(selection.wrappedValue)
         }
     }
 
@@ -89,6 +96,7 @@ public struct DiffReviewView: View {
             .labelsHidden()
             .frame(width: 190)
             .help("Choose Unified or Side-by-Side Diff")
+            .accessibilityLabel("Diff presentation mode")
             if let onClose {
                 Button("Done", action: onClose)
                     .keyboardShortcut(.defaultAction)
@@ -101,9 +109,9 @@ public struct DiffReviewView: View {
 
     private var fileList: some View {
         VStack(spacing: 0) {
-            List(selection: $selectedFileID) {
+            List(selection: selection) {
                 ForEach(document.files) { file in
-                    DiffReviewFileRow(file: file)
+                    DiffFileRow(file: file)
                         .tag(file.id)
                 }
             }
@@ -139,29 +147,12 @@ public struct DiffReviewView: View {
     @ViewBuilder
     private var detail: some View {
         if let file = selectedFile {
-            VStack(spacing: 0) {
-                DiffFileHeaderView(file: file)
-                Divider()
-                if file.hunks.isEmpty || file.isBinary || file.isOversized || file.isUnavailable {
-                    DiffUnavailableState(file: file)
-                } else {
-                    hunkToolbar(for: file)
-                    Divider()
-                    if mode == .unified {
-                        UnifiedDiffView(
-                            file: file,
-                            selectedHunk: selectedHunk,
-                            configuration: configuration.diff
-                        )
-                    } else {
-                        SideBySideDiffView(
-                            file: file,
-                            selectedHunk: selectedHunk,
-                            configuration: configuration.diff
-                        )
-                    }
-                }
-            }
+            DiffReviewDetailView(
+                file: file,
+                configuration: configuration,
+                mode: $mode
+            )
+            .id(file.id)
         } else {
             ContentUnavailableView(
                 "Select a File",
@@ -172,94 +163,25 @@ public struct DiffReviewView: View {
         }
     }
 
-    private func hunkToolbar(for file: DiffFile) -> some View {
-        HStack(spacing: 8) {
-            Button {
-                selectedHunk = max(0, selectedHunk - 1)
-            } label: {
-                Label("Previous Hunk", systemImage: "chevron.up")
-            }
-            .buttonStyle(.borderless)
-            .disabled(selectedHunk <= 0)
-
-            Button {
-                selectedHunk = min(file.hunks.count - 1, selectedHunk + 1)
-            } label: {
-                Label("Next Hunk", systemImage: "chevron.down")
-            }
-            .buttonStyle(.borderless)
-            .disabled(selectedHunk >= file.hunks.count - 1)
-
-            if file.hunks.isEmpty == false {
-                Text("Hunk \(selectedHunk + 1) of \(file.hunks.count)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            if file.isCoarse {
-                Text("Coarse comparison")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 5)
-        .background(.quaternary.opacity(0.18))
+    private var selection: Binding<String?> {
+        externalSelection ?? $internalSelection
     }
 
     private var selectedFile: DiffFile? {
-        guard let selectedFileID else { return document.files.first }
-        return document.files.first { $0.id == selectedFileID }
+        guard let selectedID = selection.wrappedValue else {
+            return document.files.first
+        }
+        return document.files.first { $0.id == selectedID }
     }
 
     private var selectedFileIndex: Int {
-        guard let selectedFileID else { return -1 }
-        return document.files.firstIndex { $0.id == selectedFileID } ?? -1
+        guard let selectedID = selection.wrappedValue else { return -1 }
+        return document.files.firstIndex { $0.id == selectedID } ?? -1
     }
 
     private func selectAdjacentFile(offset: Int) {
         let current = selectedFileIndex >= 0 ? selectedFileIndex : 0
         let next = min(max(0, current + offset), document.files.count - 1)
-        selectedFileID = document.files[next].id
-    }
-}
-
-private struct DiffReviewFileRow: View {
-    let file: DiffFile
-
-    var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: icon)
-                .foregroundStyle(.secondary)
-                .frame(width: 15)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(file.display)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .help(file.path)
-                if file.state != .modified {
-                    Text(file.stateLabel)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer(minLength: 4)
-            DiffStatLabels(added: file.added, deleted: file.deleted)
-        }
-        .contentShape(Rectangle())
-        .accessibilityLabel(
-            "\(file.display), \(file.stateLabel), \(file.added) additions, \(file.deleted) deletions"
-        )
-    }
-
-    private var icon: String {
-        switch file.state {
-        case .binary: "doc.badge.gearshape"
-        case .oversized: "doc.badge.clock"
-        case .unavailable: "doc.questionmark"
-        case .added: "doc.badge.plus"
-        case .deleted: "doc.badge.minus"
-        case .empty, .modified, .coarse: "doc.text"
-        }
+        selection.wrappedValue = document.files[next].id
     }
 }
