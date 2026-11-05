@@ -68,6 +68,13 @@ public struct DiffReviewView: View {
         }
         .frame(minWidth: 760, minHeight: 480)
         .background(Color(nsColor: .windowBackgroundColor))
+        .onAppear {
+            if let selected = selection.wrappedValue,
+               document.files.contains(where: { $0.id == selected }) {
+                return
+            }
+            selection.wrappedValue = document.files.first?.id
+        }
         .onChange(of: selection.wrappedValue) {
             onSelectionChange?(selection.wrappedValue)
         }
