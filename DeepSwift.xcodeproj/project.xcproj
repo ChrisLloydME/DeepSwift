@@ -12,6 +12,10 @@
   },
   "packages": [
     {
+      "kind": "local",
+      "path": "Packages/DeepSwiftDiffKit",
+    },
+    {
       "kind": "remote",
       "repository": "https://github.com/LiYanan2004/MarkdownView.git",
       "version": {
@@ -61,6 +65,16 @@
           "product-name": "MarkdownView",
           "build-phase": { "build-phase": "frameworks" },
         },
+        {
+          "package": "DeepSwiftDiffKit",
+          "product-name": "DiffCore",
+          "build-phase": { "build-phase": "frameworks" },
+        },
+        {
+          "package": "DeepSwiftDiffKit",
+          "product-name": "DiffUI",
+          "build-phase": { "build-phase": "frameworks" },
+        },
       ],
       "build-settings": {
         "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
@@ -108,6 +122,18 @@
         "compile-sources",
         "frameworks",
         "resources",
+      ],
+      "package-product-members": [
+        {
+          "package": "DeepSwiftDiffKit",
+          "product-name": "DiffCore",
+          "build-phase": { "build-phase": "frameworks" },
+        },
+        {
+          "package": "DeepSwiftDiffKit",
+          "product-name": "DiffUI",
+          "build-phase": { "build-phase": "frameworks" },
+        },
       ],
       "build-settings": {
         "BUNDLE_LOADER": "$(TEST_HOST)",
