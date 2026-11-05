@@ -14,8 +14,7 @@
     {
       "kind": "local",
       "path": "Packages/DeepSwiftDiffKit",
-    },
-    {
+    }, {
       "kind": "remote",
       "repository": "https://github.com/LiYanan2004/MarkdownView.git",
       "version": {
@@ -61,18 +60,16 @@
       ],
       "package-product-members": [
         {
-          "package": "MarkdownView",
-          "product-name": "MarkdownView",
-          "build-phase": { "build-phase": "frameworks" },
-        },
-        {
           "package": "DeepSwiftDiffKit",
           "product-name": "DiffCore",
           "build-phase": { "build-phase": "frameworks" },
-        },
-        {
+        }, {
           "package": "DeepSwiftDiffKit",
           "product-name": "DiffUI",
+          "build-phase": { "build-phase": "frameworks" },
+        }, {
+          "package": "MarkdownView",
+          "product-name": "MarkdownView",
           "build-phase": { "build-phase": "frameworks" },
         },
       ],
@@ -128,8 +125,7 @@
           "package": "DeepSwiftDiffKit",
           "product-name": "DiffCore",
           "build-phase": { "build-phase": "frameworks" },
-        },
-        {
+        }, {
           "package": "DeepSwiftDiffKit",
           "product-name": "DiffUI",
           "build-phase": { "build-phase": "frameworks" },
@@ -148,6 +144,7 @@
         "STRING_CATALOG_GENERATE_SYMBOLS": "NO",
         "SWIFT_APPROACHABLE_CONCURRENCY": "YES",
         "SWIFT_EMIT_LOC_STRINGS": "NO",
+        "SWIFT_STRICT_CONCURRENCY": "complete",
         "SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY": "YES",
         "SWIFT_VERSION": "5.0",
         "TEST_HOST": "$(BUILT_PRODUCTS_DIR)/DeepSwift.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/DeepSwift",

@@ -9,13 +9,15 @@ import Testing
 
 /// A bridge double that records calls and returns scripted values.
 actor MockBridgeService: DSHBridgeService {
-    nonisolated let notifications: AsyncStream<BridgeNotification>
+    nonisolated var notifications: AsyncStream<BridgeNotification> { stream }
+    private let stream: AsyncStream<BridgeNotification>
     private(set) var requests: [(method: String, params: JSONValue)] = []
     private var response: @Sendable (String, JSONValue) throws -> JSONValue
 
     init(response: @escaping @Sendable (String, JSONValue) throws -> JSONValue = { _, _ in .object([:]) }) {
         var continuation: AsyncStream<BridgeNotification>.Continuation?
-        notifications = AsyncStream { continuation = $0 }
+        let stream = AsyncStream<BridgeNotification> { continuation = $0 }
+        self.stream = stream
         self.response = response
         continuation?.finish()
     }

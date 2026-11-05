@@ -325,6 +325,17 @@ struct WorkspaceChangesSummary: Codable, Hashable, Sendable {
     let deleted: Int
 }
 
+/// A Session-scoped snapshot of the latest Host workspace-changes event.
+///
+/// The sequence is the durable event identity. Keeping it with the summary
+/// prevents a Review from being opened against whichever Session happens to
+/// be selected later.
+struct WorkspaceChangesContext: Hashable, Sendable {
+    let sessionID: String
+    let sequence: Int
+    let summary: WorkspaceChangesSummary
+}
+
 struct WorkspaceDiffHunk: Codable, Hashable, Sendable {
     let oldStart: Int
     let oldLines: Int
