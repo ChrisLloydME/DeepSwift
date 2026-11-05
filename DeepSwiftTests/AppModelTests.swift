@@ -8,16 +8,15 @@ import Testing
 @testable import DeepSwift
 
 /// A bridge double that records calls and returns scripted values.
-actor MockBridgeService: DSHBridgeService {
-    nonisolated var notifications: AsyncStream<BridgeNotification> { stream }
-    private let stream: AsyncStream<BridgeNotification>
-    private(set) var requests: [(method: String, params: JSONValue)] = []
+final class MockBridgeService: DSHBridgeService, @unchecked Sendable {
+    let notifications: AsyncStream<BridgeNotification>
+    private let lock = NSLock()
+    private var requests: [(method: String, params: JSONValue)] = []
     private var response: @Sendable (String, JSONValue) throws -> JSONValue
 
     init(response: @escaping @Sendable (String, JSONValue) throws -> JSONValue = { _, _ in .object([:]) }) {
         var continuation: AsyncStream<BridgeNotification>.Continuation?
-        let stream = AsyncStream<BridgeNotification> { continuation = $0 }
-        self.stream = stream
+        notifications = AsyncStream { continuation = $0 }
         self.response = response
         continuation?.finish()
     }
@@ -26,12 +25,16 @@ actor MockBridgeService: DSHBridgeService {
     func stop() async {}
 
     func request(_ method: String, params: JSONValue, timeout: Duration) async throws -> JSONValue {
+        lock.lock()
         requests.append((method, params))
+        lock.unlock()
         return try response(method, params)
     }
 
-    func recordedRequests() -> [(method: String, params: JSONValue)] {
-        requests
+    func recordedRequests() async -> [(method: String, params: JSONValue)] {
+        lock.lock()
+        defer { lock.unlock() }
+        return requests
     }
 }
 

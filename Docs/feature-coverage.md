@@ -27,7 +27,7 @@ automation tasks are excluded by product scope.
 | Image preview | Yes | Complete | Native zoomable `NSImageView` in `NSScrollView` | Build; source |
 | PDF preview | Yes | Complete | PDFKit continuous view | Build; source |
 | Changed files summary | Yes | Complete | Latest live turn only; Host keeps history for its lifetime | Real turn: summary/diff |
-| Diff viewing | Yes | Complete | Unified hunks, line colors, per-file navigation | Real turn: `+hello world` hunk |
+| Diff viewing | Yes | Complete | Compact Chat summary, independent native Review window, native sidebar/toolbar, Unified and Side-by-Side modes, intraline highlights, per-file and per-hunk navigation | Real turn: `+hello world` hunk |
 | Terminal | Yes | Complete | SwiftTerm 1.2.5 + official terminal controller; sheet UI | Live PTY create, attach, input, output; preview |
 | Background jobs | Yes | Complete | Native job roster sheet with progress, detail, and Stop; Inspector summary | Source |
 | Message search | Yes | Partial | Official search endpoint and sheet; no automated integration test | Source |
@@ -57,7 +57,9 @@ automation tasks are excluded by product scope.
   `google-generative-ai` appears in OpenCode metadata and the installed
   `gemini-4-argon` entry, but custom Google routes are not offered.
 - `workspace/changes` summaries are process-local to the live Host. A turn
-  reopened after Host restart has no comparison, by upstream design.
+  reopened after Host restart has no comparison, by upstream design. An open
+  Review window retains comparisons it has already loaded; DeepSwift does not
+  recreate expired comparisons from the current filesystem.
 - Terminal and Agent tools use the Host's execution environment. Development
   shells that restrict PTY creation will report a Host error; the packaged app
   was verified outside that restriction.

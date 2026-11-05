@@ -3,11 +3,15 @@
 //  DeepSwift
 //
 
+import DiffCore
+import DiffUI
 import SwiftUI
 
 struct ChatView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
     @AppStorage("showTimestamps") private var showTimestamps = false
+    @State private var selectedSummaryFileID: String?
 
     var body: some View {
         @Bindable var model = model
@@ -26,6 +30,9 @@ struct ChatView: View {
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
+        .onChange(of: model.changesContext?.sequence) {
+            selectedSummaryFileID = nil
+        }
         .onDisappear {
             model.finishMarkdownStreams()
         }
@@ -53,16 +60,28 @@ struct ChatView: View {
                         .padding(.top, 8)
                     }
 
-                    ForEach(model.conversation.items) { item in
+                    ForEach(itemsBeforeChanges) { item in
                         MessageRow(item: item, showTimestamp: showTimestamps)
                             .id(item.id)
                     }
 
-                    if let summary = model.changesSummary {
-                        WorkspaceChangesCard(summary: summary) {
-                            model.showChanges = true
-                        }
-                        .id("changes-\(summary.turn)")
+                    if let context = visibleChangesContext {
+                        DiffSummaryView(
+                            summary: DiffModelAdapter.changeSummary(from: context.summary),
+                            selectedFileID: $selectedSummaryFileID,
+                            onSelectFile: { file in
+                                openReview(context, fileID: file.id)
+                            },
+                            onReview: {
+                                openReview(context, fileID: nil)
+                            }
+                        )
+                        .id("changes-\(context.sequence)")
+                    }
+
+                    ForEach(itemsAfterChanges) { item in
+                        MessageRow(item: item, showTimestamp: showTimestamps)
+                            .id(item.id)
                     }
 
                     ForEach(model.pendingPrompts) { prompt in
@@ -98,6 +117,33 @@ struct ChatView: View {
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
+    }
+
+    /// Only the latest workspace-changes event is retained per Session. Its
+    /// durable sequence anchors the compact summary at the correct turn instead
+    /// of always placing it under the newest historical message.
+    private var visibleChangesContext: WorkspaceChangesContext? {
+        ConversationChangesPlacement.visibleContext(
+            model.changesContext,
+            sessionID: model.selectedSessionID
+        )
+    }
+
+    private var itemsBeforeChanges: [ChatItem] {
+        ConversationChangesPlacement
+            .split(model.conversation.items, at: visibleChangesContext?.sequence)
+            .before
+    }
+
+    private var itemsAfterChanges: [ChatItem] {
+        ConversationChangesPlacement
+            .split(model.conversation.items, at: visibleChangesContext?.sequence)
+            .after
+    }
+
+    private func openReview(_ context: WorkspaceChangesContext, fileID: String?) {
+        let identity = model.registerReview(for: context, selecting: fileID)
+        openWindow(id: ReviewWindowScene.identifier, value: identity)
     }
 
     private var liveActivity: some View {

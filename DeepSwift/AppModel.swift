@@ -59,6 +59,7 @@ final class AppModel {
     var selectedSessionID: String?
     var conversation = ConversationProjection()
     let markdownStreams = MarkdownStreamCoordinator()
+    let reviewCoordinator = ReviewCoordinator()
     var conversationSessionID: String?
     var isLoadingConversation = false
     var isLoadingOlder = false
@@ -136,10 +137,7 @@ final class AppModel {
     var terminalWritable = false
     var terminalLoading = false
     var terminalError: String?
-    var changesSummary: WorkspaceChangesSummary?
-    var changesLoading = false
-    var changesError: String?
-    var showChanges = false
+    var changesContext: WorkspaceChangesContext?
     var lastRuntimeError: String?
 
     private let bridge: any DSHBridgeService
@@ -1427,9 +1425,7 @@ final class AppModel {
         selectedSessionID = id
         conversationSessionID = id
         detachTerminal(clearList: true)
-        changesSummary = nil
-        changesError = nil
-        changesLoading = false
+        changesContext = nil
         changesSequence = nil
         changesSessionID = nil
         markdownStreams.finish()
@@ -2157,33 +2153,72 @@ final class AppModel {
 
     func loadChangesSummary(seq: Int, sessionID: String) async {
         guard selectedSessionID == sessionID else { return }
-        changesLoading = true
-        defer { changesLoading = false }
         do {
             let result = try await bridge.request("workspace.changesSummary", params: .object([
                 "sessionId": .string(sessionID),
                 "seq": .number(Double(seq))
             ]), timeout: .seconds(20))
-            guard selectedSessionID == sessionID, changesSequence == seq else { return }
-            changesSummary = try result.decode(WorkspaceChangesSummary.self)
-            changesError = nil
+            guard selectedSessionID == sessionID,
+                  changesSessionID == sessionID,
+                  changesSequence == seq else { return }
+            let summary = try result.decode(WorkspaceChangesSummary.self)
+            changesContext = WorkspaceChangesContext(
+                sessionID: sessionID,
+                sequence: seq,
+                summary: summary
+            )
         } catch {
-            guard selectedSessionID == sessionID, changesSequence == seq else { return }
-            changesSummary = nil
-            changesError = "Changed files are not available for this turn. \(error.localizedDescription)"
+            guard selectedSessionID == sessionID,
+                  changesSessionID == sessionID,
+                  changesSequence == seq else { return }
+            changesContext = nil
+            logger.debug("Changed files unavailable for sequence \(seq, privacy: .public)")
         }
     }
 
-    func loadChangesDiff(index: Int) async throws -> WorkspaceFileDiff {
-        guard let sessionID = selectedSessionID, let seq = changesSequence else {
-            throw BridgeClientError.protocolViolation("No changed-file summary is selected.")
-        }
+    /// Context-explicit comparison loading for independent Review windows.
+    /// The caller supplies the Session and sequence captured when the Review
+    /// opened; this method never consults `selectedSessionID`.
+    func loadChangesDiff(
+        sessionID: String,
+        sequence: Int,
+        index: Int
+    ) async throws -> WorkspaceFileDiff {
         let result = try await bridge.request("workspace.changesDiff", params: .object([
             "sessionId": .string(sessionID),
-            "seq": .number(Double(seq)),
+            "seq": .number(Double(sequence)),
             "index": .number(Double(index))
         ]), timeout: .seconds(30))
         return try result.decode(WorkspaceFileDiff.self)
+    }
+
+    func loadChangesDiff(index: Int) async throws -> WorkspaceFileDiff {
+        guard let context = changesContext else {
+            throw BridgeClientError.protocolViolation("No changed-file summary is selected.")
+        }
+        return try await loadChangesDiff(
+            sessionID: context.sessionID,
+            sequence: context.sequence,
+            index: index
+        )
+    }
+
+    /// Captures the immutable request used by the Review window scene. Passing
+    /// no file preserves the current selection when the same Review is already
+    /// open.
+    func registerReview(
+        for context: WorkspaceChangesContext,
+        selecting fileID: String? = nil
+    ) -> ReviewIdentity {
+        let title = sessions.first(where: { $0.sessionId == context.sessionID })?.displayTitle
+        return reviewCoordinator.register(
+            sessionID: context.sessionID,
+            sequence: context.sequence,
+            turn: context.summary.turn,
+            summary: context.summary,
+            sessionTitle: title,
+            selecting: fileID
+        )
     }
 
     private func captureWorkspaceChange(seq: Int, event: SessionWireEvent) {
@@ -2192,8 +2227,7 @@ final class AppModel {
         if changesSessionID == sessionID, let current = changesSequence, current >= seq { return }
         changesSessionID = sessionID
         changesSequence = seq
-        changesSummary = nil
-        changesError = nil
+        changesContext = nil
         Task { [weak self] in
             await self?.loadChangesSummary(seq: seq, sessionID: sessionID)
         }

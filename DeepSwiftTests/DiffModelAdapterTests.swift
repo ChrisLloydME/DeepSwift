@@ -145,6 +145,21 @@ struct DiffModelAdapterTests {
         )
         #expect(coarse.state == .coarse)
 
+        let coarseWithoutHunks = try DiffModelAdapter.file(
+            from: WorkspaceFileDiff(
+                kind: "text",
+                path: "Sources/Zeta.swift",
+                display: "Zeta.swift",
+                before: true,
+                after: true,
+                hunks: nil,
+                coarse: true
+            ),
+            summaryFile: summary.files[0]
+        )
+        #expect(coarseWithoutHunks.state == .coarse)
+        #expect(coarseWithoutHunks.isUnavailable == false)
+
         let binary = try DiffModelAdapter.file(
             from: WorkspaceFileDiff(
                 kind: "binary",

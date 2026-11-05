@@ -178,8 +178,13 @@ API-key authentication remain distinct routes and catalog groups.
   syntax highlighting. It is a viewer, not an editor.
 - `workspace/changes` events carry only a turn number. The Host's authenticated
   `/api/changes.summary` and `/api/changes.diff` routes provide the files and
-  unified hunks. The app folds the latest live announcement into a card and a
-  bounded review sheet. Summaries do not survive a Host restart.
+  unified hunks. The app captures the event sequence, renders a compact
+  `DiffSummaryView` at that transcript anchor, and opens a programmatic,
+  data-driven `WindowGroup` for the full Review. That window uses a native
+  `NavigationSplitView` sidebar and toolbar, loads one file comparison at a
+  time with context-explicit Session/sequence parameters, and caches loaded
+  comparisons only for the lifetime of the window. Summaries and comparisons do
+  not survive a Host restart.
 - Terminal processes are owned by the Host terminal controller. `SwiftTerm`
   is a separate dynamic framework linked into the app and embedded in
   `Contents/Frameworks`; it only parses VT sequences and translates keyboard

@@ -66,13 +66,12 @@ enum DiffModelAdapter {
         let isBinary = summaryFile.binary == true || detail.kind.caseInsensitiveCompare("binary") == .orderedSame
         let isOversized = summaryFile.oversized == true || detail.kind.caseInsensitiveCompare("oversized") == .orderedSame
 
-        return DiffFileSource(
-            kind: detail.kind,
-            path: summaryFile.path,
-            display: summaryFile.display.isEmpty ? detail.display : summaryFile.display,
-            before: detail.before,
-            after: detail.after,
-            hunks: detail.hunks?.map { hunk in
+        // DiffCore treats nil hunks as unavailable. A coarse comparison with no
+        // hunks is still a coarse result, so an explicit empty array preserves
+        // that Host state instead of mislabeling it as unavailable.
+        let hunks: [DiffHunkSource]?
+        if let detailHunks = detail.hunks {
+            hunks = detailHunks.map { hunk in
                 DiffHunkSource(
                     oldStart: hunk.oldStart,
                     oldLines: hunk.oldLines,
@@ -80,7 +79,20 @@ enum DiffModelAdapter {
                     newLines: hunk.newLines,
                     lines: hunk.lines
                 )
-            },
+            }
+        } else if detail.coarse == true {
+            hunks = []
+        } else {
+            hunks = nil
+        }
+
+        return DiffFileSource(
+            kind: detail.kind,
+            path: summaryFile.path,
+            display: summaryFile.display.isEmpty ? detail.display : summaryFile.display,
+            before: detail.before,
+            after: detail.after,
+            hunks: hunks,
             coarse: detail.coarse,
             added: summaryFile.added,
             deleted: summaryFile.deleted,

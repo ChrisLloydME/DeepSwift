@@ -7,6 +7,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
     @AppStorage("appearance") private var appearance = "system"
 
     var body: some View {
@@ -73,12 +74,14 @@ struct ContentView: View {
                 .disabled(model.selectedSessionID == nil)
 
                 Button {
-                    model.showChanges = true
+                    guard let context = model.changesContext else { return }
+                    let identity = model.registerReview(for: context)
+                    openWindow(id: ReviewWindowScene.identifier, value: identity)
                 } label: {
                     Label("Changes", systemImage: "plus.forwardslash.minus")
                 }
-                .help("Review Changed Files")
-                .disabled(model.changesSummary == nil)
+                .help("Review Changed Files (⇧⌘D)")
+                .disabled(model.changesContext == nil)
 
                 Button {
                     model.showTerminal = true
@@ -156,10 +159,6 @@ struct ContentView: View {
         }
         .sheet(isPresented: $model.showTerminal) {
             TerminalWorkspaceView()
-                .environment(model)
-        }
-        .sheet(isPresented: $model.showChanges) {
-            WorkspaceChangesView()
                 .environment(model)
         }
         .sheet(isPresented: $model.showJobs) {

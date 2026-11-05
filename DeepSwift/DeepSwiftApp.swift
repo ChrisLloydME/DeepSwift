@@ -9,6 +9,7 @@ import SwiftUI
 @main
 struct DeepSwiftApp: App {
     @State private var model = AppModel()
+    @Environment(\.openWindow) private var openWindow
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
@@ -91,12 +92,32 @@ struct DeepSwiftApp: App {
                 .keyboardShortcut("j", modifiers: [.command, .shift])
 
                 Button("Review Changed Files") {
-                    model.showChanges = true
+                    guard let context = model.changesContext else { return }
+                    let identity = model.registerReview(for: context)
+                    openWindow(id: ReviewWindowScene.identifier, value: identity)
                 }
                 .keyboardShortcut("d", modifiers: [.command, .shift])
-                .disabled(model.changesSummary == nil)
+                .disabled(model.changesContext == nil)
             }
         }
+
+        WindowGroup("Changes", id: ReviewWindowScene.identifier, for: ReviewIdentity.self) { $identity in
+            if let identity {
+                ReviewWindow(identity: identity)
+                    .environment(model)
+            } else {
+                ContentUnavailableView {
+                    Label("Review Unavailable", systemImage: "doc.questionmark")
+                } description: {
+                    Text("Reopen the Review from the Chat session.")
+                }
+            }
+        }
+        .defaultSize(width: 1_120, height: 720)
+        .windowResizability(.contentMinSize)
+        .windowToolbarStyle(.unified(showsTitle: true))
+        .restorationBehavior(.disabled)
+        .commandsRemoved()
 
         Settings {
             SettingsView()
